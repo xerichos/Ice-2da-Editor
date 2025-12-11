@@ -13,21 +13,21 @@ from .table_view import TwoDATable
 from .dialogs import SearchReplaceDialog
 from data.twoda import TwoDAData, load_2da, save_2da
 from error_handler import show_error
+from PyQt5.QtWidgets import QUndoStack
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("NWN 2DA Editor")
+        self.setWindowTitle("Icy 2da Editor")
         self.resize(1200, 700)
-
+        self.undo_stack = QUndoStack(self)
         self.table = TwoDATable()
         self.setCentralWidget(self.table)
-
         self.is_dirty = False
         self.current_path = None
-        self.current_data = None  # already exists if you followed previous steps
+        self.current_data = None
         self.update_window_title()
         self.create_actions()
         self.create_menu()
@@ -48,15 +48,60 @@ class MainWindow(QMainWindow):
         self.act_search = QAction("Search/Replace", self)
         self.act_search.setShortcut("Ctrl+F")
         self.act_search.triggered.connect(self.search_replace)
+         
+        self.act_undo = QAction("Undo", self)
+        self.act_undo.setShortcut("Ctrl+Z")
+        self.act_undo.triggered.connect(self.undo_stack.undo)
 
+        self.act_redo = QAction("Redo", self)
+        self.act_redo.setShortcut("Ctrl+Y")
+        self.act_redo.triggered.connect(self.undo_stack.redo)
+
+        self.act_select_all = QAction("Select All", self)
+        self.act_select_all.setShortcut("Ctrl+A")
+        self.act_select_all.triggered.connect(lambda: self.table.selectAll())
+
+        self.act_delete_row = QAction("Delete Row", self)
+        self.act_delete_row.setShortcut("Del")
+        self.act_delete_row.triggered.connect(self.delete_selected_row)
+        
+        self.act_exit = QAction("Exit", self)
+        self.act_exit.triggered.connect(self.close)
+                
+        
+    def delete_selected_row(self):
+        # No table loaded
+        if not hasattr(self, "table"):
+            return
+
+        row = self.table.currentRow()
+        if row < 0:
+            return  # nothing selected
+
+        self.table.removeRow(row)
+
+        # Mark the document dirty
+        self.is_dirty = True
+        self.update_window_title()
+
+        
     def create_menu(self):
-        m = self.menuBar().addMenu("File")
-        m.addAction(self.act_open)
-        m.addAction(self.act_save)
-        m.addAction(self.act_save_as)
+        menubar = self.menuBar()
 
-        e = self.menuBar().addMenu("Edit")
-        e.addAction(self.act_search)
+        file_menu = menubar.addMenu("File")
+        file_menu.addAction(self.act_open)
+        file_menu.addAction(self.act_save)
+        file_menu.addAction(self.act_save_as)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_exit)
+
+        edit_menu = menubar.addMenu("Edit")
+        edit_menu.addAction(self.act_undo)
+        edit_menu.addAction(self.act_redo)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.act_search)
+        edit_menu.addAction(self.act_delete_row)
+        
 
     def open_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open 2DA", "", "2DA Files (*.2da)")
@@ -105,7 +150,7 @@ class MainWindow(QMainWindow):
     def update_window_title(self):
         name = self.current_path if self.current_path else "Untitled"
         star = "*" if self.is_dirty else ""
-        self.setWindowTitle(f"{name}{star} - 2DA Editor")
+        self.setWindowTitle(f"{name}{star} - Icy 2da Editor")
 
     def save_file_as(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save 2DA", "", "2DA Files (*.2da)")

@@ -13,6 +13,8 @@ class TwoDATable(QTableWidget):
         super().__init__(parent)
         self._suspend_dirty = False
         self.itemChanged.connect(self._on_cell_changed)
+        self.itemActivated.connect(self.prepare_for_edit) 
+        self.itemClicked.connect(self.prepare_for_edit)
 
     def set_data(self, header, rows):
         # Prevent dirty flag from triggering while filling data
@@ -28,6 +30,7 @@ class TwoDATable(QTableWidget):
                 item = QTableWidgetItem(val)
                 item.setBackground(self.DEFAULT_BG)
                 self.setItem(r, c, item)
+                item._old_value = val
 
         self._suspend_dirty = False
 
@@ -46,6 +49,11 @@ class TwoDATable(QTableWidget):
             rows.append(row)
 
         return header, rows
+        
+    def prepare_for_edit(self, item):
+        # store the value before editing
+        item._old_value = item.text()
+
 
     # ------------------------------------------------------------------
     # Mark parent window as dirty on edits
@@ -55,7 +63,22 @@ class TwoDATable(QTableWidget):
             return
 
         win = self.window()
+        if not hasattr(win, "undo_stack"):
+            return
+
+        row = item.row()
+        col = item.column()
+        new_text = item.text()
+
+        # Retrieve old text stored before edit
+        old_text = getattr(item, "_old_value", "")
+
+        # Push undo command
+        from gui.undo_commands import CellEditCommand
+        cmd = CellEditCommand(self, row, col, old_text, new_text)
+        win.undo_stack.push(cmd)
+
+        # Mark document dirty
         if hasattr(win, "is_dirty"):
             win.is_dirty = True
-            if hasattr(win, "update_window_title"):
-                win.update_window_title()
+            win.update_window_title()
