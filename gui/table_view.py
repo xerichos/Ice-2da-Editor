@@ -20,6 +20,7 @@ class TwoDATable(QTableWidget):
 
 
     def set_data(self, header, rows):
+        # Prevent dirty flag from triggering while filling data
         self._suspend_dirty = True
 
         self.clear()
@@ -34,11 +35,7 @@ class TwoDATable(QTableWidget):
                 self.setItem(r, c, item)
                 item._old_value = val
 
-        # NEW: sync left frozen column with index column
-        self.sync_index_header()
-
         self._suspend_dirty = False
-
 
     def extract_data(self):
         header = []
@@ -61,6 +58,9 @@ class TwoDATable(QTableWidget):
         item._old_value = item.text()
 
 
+    # ------------------------------------------------------------------
+    # Mark parent window as dirty on edits
+    # ------------------------------------------------------------------
     def _on_cell_changed(self, item):
         if self._suspend_dirty:
             return
@@ -73,26 +73,18 @@ class TwoDATable(QTableWidget):
         col = item.column()
         new_text = item.text()
 
-        # Keep vertical header in sync if index column changed
-        if col == 0:
-            header_item = self.verticalHeaderItem(row)
-            if header_item is None:
-                from PyQt5.QtWidgets import QTableWidgetItem
-                header_item = QTableWidgetItem(new_text)
-                self.setVerticalHeaderItem(row, header_item)
-            else:
-                header_item.setText(new_text)
-
+        # Retrieve old text stored before edit
         old_text = getattr(item, "_old_value", "")
 
+        # Push undo command
         from gui.undo_commands import CellEditCommand
         cmd = CellEditCommand(self, row, col, old_text, new_text)
         win.undo_stack.push(cmd)
 
+        # Mark document dirty
         if hasattr(win, "is_dirty"):
             win.is_dirty = True
             win.update_window_title()
-
 
 
     def _create_empty_item(self):
@@ -138,16 +130,3 @@ class TwoDATable(QTableWidget):
         menu.exec_(self.viewport().mapToGlobal(pos))
 
 
-    def sync_index_header(self):
-        """Make the frozen left header show the values of column 0."""
-        from PyQt5.QtWidgets import QTableWidgetItem
-
-        for r in range(self.rowCount()):
-            item = self.item(r, 0)
-            text = item.text() if item else ""
-            header_item = self.verticalHeaderItem(r)
-            if header_item is None:
-                header_item = QTableWidgetItem(text)
-                self.setVerticalHeaderItem(r, header_item)
-            else:
-                header_item.setText(text)

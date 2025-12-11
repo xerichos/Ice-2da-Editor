@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
             self.current_data = data
             self.current_path = path
 
-            header = data.header_fields
+            header = [""] + data.header_fields
             rows = data.row_fields
 
             self.table.set_data(header, rows)
@@ -138,8 +138,8 @@ class MainWindow(QMainWindow):
 
         try:
             header, rows = self.table.extract_data()
-            self.current_data.header_fields = header      
-            self.current_data.row_fields = rows           
+            self.current_data.header_fields = header[1:]  # drop synthetic index header
+            self.current_data.row_fields = rows
 
             save_2da(self.current_path, self.current_data)
 
@@ -156,11 +156,28 @@ class MainWindow(QMainWindow):
         self.current_path = path
         self.save_file()
 
+    # ------------------------------------------------------------------ #
+    # Dirty flag / title
+    # ------------------------------------------------------------------ #
     def update_window_title(self):
         name = self.current_path if self.current_path else "Untitled"
         star = "*" if self.is_dirty else ""
         self.setWindowTitle(f"{name}{star} - Icy 2da Editor")
 
+    # ------------------------------------------------------------------ #
+    # Row operations
+    # ------------------------------------------------------------------ #
+    def delete_selected_row(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.table.removeRow(row)
+        self.is_dirty = True
+        self.update_window_title()
+
+    # ------------------------------------------------------------------ #
+    # Search / Replace / Find Next / Find Previous
+    # ------------------------------------------------------------------ #
     def search_replace(self):
         dlg = SearchReplaceDialog(self)
         if dlg.exec_() != dlg.Accepted:
@@ -273,15 +290,6 @@ class MainWindow(QMainWindow):
             if idx == start_idx:
                 return
                 
-    def delete_selected_row(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        self.table.removeRow(row)
-        self.table.sync_index_header()
-        self.is_dirty = True
-        self.update_window_title()
-
     def insert_row_above(self):
         table = self.table
         row = table.currentRow()
@@ -290,12 +298,14 @@ class MainWindow(QMainWindow):
 
         cols = table.columnCount()
         table.insertRow(row)
+
+        # Insert empty cells
         for c in range(cols):
             table.setItem(row, c, table._create_empty_item())
 
-        table.sync_index_header()
         self.is_dirty = True
         self.update_window_title()
+
 
     def insert_row_below(self):
         table = self.table
@@ -306,12 +316,13 @@ class MainWindow(QMainWindow):
         cols = table.columnCount()
         new_row = row + 1
         table.insertRow(new_row)
+
         for c in range(cols):
             table.setItem(new_row, c, table._create_empty_item())
 
-        table.sync_index_header()
         self.is_dirty = True
         self.update_window_title()
+
 
     def duplicate_row(self):
         table = self.table
@@ -322,12 +333,11 @@ class MainWindow(QMainWindow):
         cols = table.columnCount()
         new_row = row + 1
         table.insertRow(new_row)
+
         for c in range(cols):
             item = table.item(row, c)
             value = item.text() if item else ""
             table.setItem(new_row, c, table._create_item(value))
 
-        table.sync_index_header()
         self.is_dirty = True
         self.update_window_title()
-
