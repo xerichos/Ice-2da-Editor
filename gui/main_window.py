@@ -14,7 +14,8 @@ from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack
 from .table_view import TwoDATable
 from .dialogs import SearchReplaceDialog
 from data.twoda import load_2da, save_2da
-from error_handler import show_error
+from gui.error_handler import show_error
+
 
 
 class MainWindow(QMainWindow):

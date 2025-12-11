@@ -1,4 +1,3 @@
-# main.py
 import sys
 import traceback
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -7,15 +6,21 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 
 def global_exception_hook(exc_type, exc_value, exc_traceback):
     tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    app = QApplication.instance()
 
-    dlg = QMessageBox()
-    dlg.setIcon(QMessageBox.Critical)
-    dlg.setWindowTitle("Unhandled Error")
-    dlg.setText(f"An unexpected error occurred:\n\n{exc_value}")
-    dlg.setDetailedText(tb)
-    dlg.exec_()
+    # Only show QMessageBox if QApplication already exists
+    if app is not None:
+        dlg = QMessageBox()
+        dlg.setIcon(QMessageBox.Critical)
+        dlg.setWindowTitle("Unhandled Error")
+        dlg.setText(f"An unexpected error occurred:\n\n{exc_value}")
+        dlg.setDetailedText(tb)
+        dlg.exec_()
+    else:
+        # QApplication not created yet — fallback to stderr
+        print("Unhandled exception before QApplication was created:", file=sys.stderr)
+        print(tb, file=sys.stderr)
 
-    # Prevent Qt from killing the interpreter
     sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
 sys.excepthook = global_exception_hook

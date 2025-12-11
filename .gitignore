@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 *.2da
 build_exe.bat
+setup.py
