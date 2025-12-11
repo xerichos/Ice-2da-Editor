@@ -288,3 +288,55 @@ class MainWindow(QMainWindow):
                 idx = total - 1
             if idx == start_idx:
                 return
+                
+    def insert_row_above(self):
+        table = self.table
+        row = table.currentRow()
+        if row < 0:
+            return
+
+        cols = table.columnCount()
+        table.insertRow(row)
+
+        # Insert empty cells
+        for c in range(cols):
+            table.setItem(row, c, table._create_empty_item())
+
+        self.is_dirty = True
+        self.update_window_title()
+
+
+    def insert_row_below(self):
+        table = self.table
+        row = table.currentRow()
+        if row < 0:
+            return
+
+        cols = table.columnCount()
+        new_row = row + 1
+        table.insertRow(new_row)
+
+        for c in range(cols):
+            table.setItem(new_row, c, table._create_empty_item())
+
+        self.is_dirty = True
+        self.update_window_title()
+
+
+    def duplicate_row(self):
+        table = self.table
+        row = table.currentRow()
+        if row < 0:
+            return
+
+        cols = table.columnCount()
+        new_row = row + 1
+        table.insertRow(new_row)
+
+        for c in range(cols):
+            item = table.item(row, c)
+            value = item.text() if item else ""
+            table.setItem(new_row, c, table._create_item(value))
+
+        self.is_dirty = True
+        self.update_window_title()
