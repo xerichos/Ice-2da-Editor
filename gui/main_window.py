@@ -1,6 +1,8 @@
 # gui/main_window.py
 
-import sys, os
+import sys
+import os
+import re  
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG_PATH = os.path.join(ROOT, "debug")
 if DEBUG_PATH not in sys.path:
@@ -116,8 +118,8 @@ class MainWindow(QMainWindow):
         dlg = SearchReplaceDialog(self)
         if dlg.exec_() != dlg.Accepted:
             return
-        vals = dlg.values()
 
+        vals = dlg.values()
         pat = vals["pattern"]
         rep = vals["replacement"]
         match_case = vals["match_case"]
@@ -126,22 +128,26 @@ class MainWindow(QMainWindow):
         if not pat:
             return
 
+        # Build regex
+        flags = 0 if match_case else re.IGNORECASE
+        escaped = re.escape(pat)
+        if whole:
+            pattern = r"\b" + escaped + r"\b"
+        else:
+            pattern = escaped
+
+        regex = re.compile(pattern, flags)
+
+        # Apply to all cells
         for r in range(self.table.rowCount()):
             for c in range(self.table.columnCount()):
                 item = self.table.item(r, c)
                 if not item:
                     continue
+
                 text = item.text()
-                a = text
-                b = pat
-                if not match_case:
-                    a = a.lower()
-                    b = b.lower()
-                if whole:
-                    if a == b:
-                        item.setText(rep)
-                else:
-                    if not match_case:
-                        item.setText(text.lower().replace(b, rep.lower()))
-                    else:
-                        item.setText(text.replace(pat, rep))
+                new_text, count = regex.subn(rep, text)
+
+                if count > 0:
+                    item.setText(new_text)
+
