@@ -2,36 +2,46 @@
 
 import sys
 import os
-import re  
+import re
+
+# Ensure debug/ is on sys.path before importing error_handler
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG_PATH = os.path.join(ROOT, "debug")
 if DEBUG_PATH not in sys.path:
     sys.path.append(DEBUG_PATH)
 
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QMessageBox
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack
 from .table_view import TwoDATable
 from .dialogs import SearchReplaceDialog
-from data.twoda import TwoDAData, load_2da, save_2da
+from data.twoda import load_2da, save_2da
 from error_handler import show_error
-from PyQt5.QtWidgets import QUndoStack
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
         self.setWindowTitle("Icy 2da Editor")
         self.resize(1200, 700)
-        self.undo_stack = QUndoStack(self)
+
         self.table = TwoDATable()
         self.setCentralWidget(self.table)
+
+        self.undo_stack = QUndoStack(self)
         self.is_dirty = False
         self.current_path = None
         self.current_data = None
+
+        self.last_search_regex = None
+        self.last_find_position = (-1, -1)  # (row, col)
+
         self.update_window_title()
         self.create_actions()
         self.create_menu()
 
+    # ------------------------------------------------------------------ #
+    # Actions / Menus
+    # ------------------------------------------------------------------ #
     def create_actions(self):
         self.act_open = QAction("Open", self)
         self.act_open.setShortcut("Ctrl+O")
@@ -45,10 +55,20 @@ class MainWindow(QMainWindow):
         self.act_save_as.setShortcut("Ctrl+Shift+S")
         self.act_save_as.triggered.connect(self.save_file_as)
 
-        self.act_search = QAction("Search/Replace", self)
+        self.act_search = QAction("Search / Replace", self)
         self.act_search.setShortcut("Ctrl+F")
         self.act_search.triggered.connect(self.search_replace)
-         
+
+        self.act_find_next = QAction("Find Next", self)
+        self.act_find_next.setShortcut("F3")
+        self.act_find_next.triggered.connect(self.find_next)
+        self.addAction(self.act_find_next)
+
+        self.act_find_prev = QAction("Find Previous", self)
+        self.act_find_prev.setShortcut("Shift+F3")
+        self.act_find_prev.triggered.connect(self.find_previous)
+        self.addAction(self.act_find_prev)
+
         self.act_undo = QAction("Undo", self)
         self.act_undo.setShortcut("Ctrl+Z")
         self.act_undo.triggered.connect(self.undo_stack.undo)
@@ -59,32 +79,15 @@ class MainWindow(QMainWindow):
 
         self.act_select_all = QAction("Select All", self)
         self.act_select_all.setShortcut("Ctrl+A")
-        self.act_select_all.triggered.connect(lambda: self.table.selectAll())
+        self.act_select_all.triggered.connect(self.table.selectAll)
 
         self.act_delete_row = QAction("Delete Row", self)
         self.act_delete_row.setShortcut("Del")
         self.act_delete_row.triggered.connect(self.delete_selected_row)
-        
+
         self.act_exit = QAction("Exit", self)
         self.act_exit.triggered.connect(self.close)
-                
-        
-    def delete_selected_row(self):
-        # No table loaded
-        if not hasattr(self, "table"):
-            return
 
-        row = self.table.currentRow()
-        if row < 0:
-            return  # nothing selected
-
-        self.table.removeRow(row)
-
-        # Mark the document dirty
-        self.is_dirty = True
-        self.update_window_title()
-
-        
     def create_menu(self):
         menubar = self.menuBar()
 
@@ -100,9 +103,14 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.act_redo)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_search)
+        edit_menu.addAction(self.act_find_next)
+        edit_menu.addAction(self.act_find_prev)
+        edit_menu.addAction(self.act_select_all)
         edit_menu.addAction(self.act_delete_row)
-        
 
+    # ------------------------------------------------------------------ #
+    # File operations
+    # ------------------------------------------------------------------ #
     def open_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open 2DA", "", "2DA Files (*.2da)")
         if not path:
@@ -113,18 +121,15 @@ class MainWindow(QMainWindow):
             self.current_data = data
             self.current_path = path
 
-            # GUI header: add synthetic blank header for the index column
-            table_header = [""] + data.header_fields
-            table_rows = data.row_fields   # rows already include the index
+            header = [""] + data.header_fields
+            rows = data.row_fields
 
-            self.table.set_data(table_header, table_rows)
+            self.table.set_data(header, rows)
             self.is_dirty = False
             self.update_window_title()
 
-
         except Exception as e:
             show_error("Failed to load 2DA file.", e)
-
 
     def save_file(self):
         if not self.current_path:
@@ -132,25 +137,16 @@ class MainWindow(QMainWindow):
 
         try:
             header, rows = self.table.extract_data()
-
-            # Update underlying model
-            self.current_data.header_fields = header[1:]   # remove synthetic index header
+            self.current_data.header_fields = header[1:]  # drop synthetic index header
             self.current_data.row_fields = rows
 
             save_2da(self.current_path, self.current_data)
 
-            # Mark clean
             self.is_dirty = False
             self.update_window_title()
 
         except Exception as e:
             show_error("Failed to save 2DA file.", e)
-
-
-    def update_window_title(self):
-        name = self.current_path if self.current_path else "Untitled"
-        star = "*" if self.is_dirty else ""
-        self.setWindowTitle(f"{name}{star} - Icy 2da Editor")
 
     def save_file_as(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save 2DA", "", "2DA Files (*.2da)")
@@ -159,6 +155,28 @@ class MainWindow(QMainWindow):
         self.current_path = path
         self.save_file()
 
+    # ------------------------------------------------------------------ #
+    # Dirty flag / title
+    # ------------------------------------------------------------------ #
+    def update_window_title(self):
+        name = self.current_path if self.current_path else "Untitled"
+        star = "*" if self.is_dirty else ""
+        self.setWindowTitle(f"{name}{star} - Icy 2da Editor")
+
+    # ------------------------------------------------------------------ #
+    # Row operations
+    # ------------------------------------------------------------------ #
+    def delete_selected_row(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.table.removeRow(row)
+        self.is_dirty = True
+        self.update_window_title()
+
+    # ------------------------------------------------------------------ #
+    # Search / Replace / Find Next / Find Previous
+    # ------------------------------------------------------------------ #
     def search_replace(self):
         dlg = SearchReplaceDialog(self)
         if dlg.exec_() != dlg.Accepted:
@@ -173,26 +191,100 @@ class MainWindow(QMainWindow):
         if not pat:
             return
 
-        # Build regex
         flags = 0 if match_case else re.IGNORECASE
         escaped = re.escape(pat)
-        if whole:
-            pattern = r"\b" + escaped + r"\b"
-        else:
-            pattern = escaped
-
+        pattern = r"\b" + escaped + r"\b" if whole else escaped
         regex = re.compile(pattern, flags)
 
-        # Apply to all cells
+        self.last_search_regex = regex
+        self.last_find_position = (-1, -1)
+
+        # Find-only mode if replacement is empty
+        if rep == "":
+            self.find_next()
+            return
+
+        # Replace-all mode
         for r in range(self.table.rowCount()):
             for c in range(self.table.columnCount()):
                 item = self.table.item(r, c)
                 if not item:
                     continue
-
                 text = item.text()
                 new_text, count = regex.subn(rep, text)
-
                 if count > 0:
                     item.setText(new_text)
 
+    def find_next(self):
+        if not self.last_search_regex:
+            return
+
+        table = self.table
+        rows = table.rowCount()
+        cols = table.columnCount()
+        if rows == 0 or cols == 0:
+            return
+
+        total = rows * cols
+        start_r, start_c = self.last_find_position
+
+        if start_r == -1:
+            idx = 0
+        else:
+            idx = (start_r * cols + start_c + 1) % total
+
+        start_idx = idx
+
+        while True:
+            r = idx // cols
+            c = idx % cols
+
+            item = table.item(r, c)
+            if item and self.last_search_regex.search(item.text()):
+                table.setCurrentCell(r, c)
+                table.scrollToItem(item)
+                self.last_find_position = (r, c)
+                return
+
+            idx = (idx + 1) % total
+            if idx == start_idx:
+                return
+
+    def find_previous(self):
+        if not self.last_search_regex:
+            return
+
+        table = self.table
+        rows = table.rowCount()
+        cols = table.columnCount()
+        if rows == 0 or cols == 0:
+            return
+
+        total = rows * cols
+        start_r, start_c = self.last_find_position
+
+        if start_r == -1:
+            idx = total - 1
+        else:
+            idx = start_r * cols + start_c - 1
+            if idx < 0:
+                idx = total - 1
+
+        start_idx = idx
+
+        while True:
+            r = idx // cols
+            c = idx % cols
+
+            item = table.item(r, c)
+            if item and self.last_search_regex.search(item.text()):
+                table.setCurrentCell(r, c)
+                table.scrollToItem(item)
+                self.last_find_position = (r, c)
+                return
+
+            idx -= 1
+            if idx < 0:
+                idx = total - 1
+            if idx == start_idx:
+                return
