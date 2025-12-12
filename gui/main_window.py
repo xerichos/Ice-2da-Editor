@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         tb = QToolBar("View", self)
         self.addToolBar(tb)
 
-        lbl = QLabel("Pinned columns:", self)
+        lbl = QLabel("Pinned columns (click a header to freeze):", self)
         spin = QSpinBox(self)
         spin.setMinimum(0)
         spin.setMaximum(50)
@@ -147,6 +147,12 @@ class MainWindow(QMainWindow):
 
         tb.addWidget(lbl)
         tb.addWidget(spin)
+
+        # reflect header-click changes in the spinbox
+        try:
+            self.table.frozenChanged.connect(spin.setValue)
+        except Exception:
+            pass
 
         self._pinned_spin = spin
 

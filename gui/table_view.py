@@ -9,6 +9,7 @@ class TwoDATable(QTableView):
     requestInsertBelow = pyqtSignal()
     requestDuplicate = pyqtSignal()
     requestDelete = pyqtSignal()
+    frozenChanged = pyqtSignal(int)
 
     DEFAULT_BG = QColor("#2b2b2b")
 
@@ -25,6 +26,8 @@ class TwoDATable(QTableView):
         self._frozen_columns = 1
         self._frozen_view = None
         self._init_frozen_view()
+        # header click -> freeze that column (freeze up to and including clicked)
+        self.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
 
     def currentRow(self):
         idx = self.currentIndex()
@@ -66,6 +69,11 @@ class TwoDATable(QTableView):
     def set_frozen_columns(self, count: int):
         self._frozen_columns = max(0, int(count))
         self._update_frozen_columns()
+        # notify listeners
+        try:
+            self.frozenChanged.emit(self._frozen_columns)
+        except Exception:
+            pass
 
     def _update_frozen_columns(self):
         if not self._frozen_view or not self.model():
@@ -93,6 +101,10 @@ class TwoDATable(QTableView):
         # when a column is resized in the main view, update frozen overlay geometry
         if logicalIndex < self._frozen_columns:
             self._resize_frozen_view()
+
+    def _on_header_clicked(self, logicalIndex):
+        # freeze up to and including this column
+        self.set_frozen_columns(logicalIndex + 1)
 
     def _resize_frozen_view(self):
         # compute total width of frozen columns
