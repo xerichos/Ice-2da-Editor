@@ -9,6 +9,7 @@ if DEBUG_PATH not in sys.path:
 
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack
 from PyQt5.QtWidgets import QUndoCommand
+from PyQt5.QtCore import QSettings
 from .table_view import TwoDATable
 from .table_model import TwoDATableModel
 from .dialogs import SearchReplaceDialog
@@ -55,7 +56,8 @@ class MainWindow(QMainWindow):
         self.last_find_position = (-1, -1)
 
         # Style management
-        self.current_style = "dark"  # default style
+        self.settings = QSettings("Ice-2DA-Editor", "MainWindow")
+        self.current_style = self.settings.value("theme", "dark")  # load saved theme or default to dark
         self.style_map = {
             "light": (LIGHT_STYLE, TABLE_LIGHT_STYLE),
             "dark": (DARK_STYLE, TABLE_DARK_STYLE),
@@ -73,8 +75,8 @@ class MainWindow(QMainWindow):
         self.create_actions()
         self.create_menu()
 
-        # Apply default dark theme
-        self.set_style("dark")
+        # Apply saved theme (or default dark theme)
+        self.set_style(self.current_style)
 
     # ------------------------------------------------------------------ #
     # Actions / Menus
@@ -174,6 +176,9 @@ class MainWindow(QMainWindow):
 
         # Update current style
         self.current_style = style_name
+
+        # Save theme preference
+        self.settings.setValue("theme", style_name)
 
         # Get the style sheets
         main_style, table_style = self.style_map[style_name]
