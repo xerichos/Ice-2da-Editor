@@ -1,21 +1,35 @@
-# gui/main_window.py
-
 import sys
 import os
 import re
 
-# Ensure debug/ is on sys.path before importing error_handler
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG_PATH = os.path.join(ROOT, "debug")
 if DEBUG_PATH not in sys.path:
     sys.path.append(DEBUG_PATH)
 
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack
+from PyQt5.QtWidgets import QUndoCommand
 from .table_view import TwoDATable
+from .table_model import TwoDATableModel
 from .dialogs import SearchReplaceDialog
 from data.twoda import load_2da, save_2da
 from gui.error_handler import show_error
 
+
+class CellEditCommand(QUndoCommand):
+    def __init__(self, model, row, col, old_text, new_text):
+        super().__init__()
+        self.model = model
+        self.row = row
+        self.col = col
+        self.old_text = old_text
+        self.new_text = new_text
+
+    def undo(self):
+        self.model.set_cell(self.row, self.col, self.old_text, emit_edit_signal=False)
+
+    def redo(self):
+        self.model.set_cell(self.row, self.col, self.new_text, emit_edit_signal=False)
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +40,9 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
 
         self.table = TwoDATable()
+        self.model = TwoDATableModel(self)
+
+        self.table.setModel(self.model)
         self.setCentralWidget(self.table)
 
         self.undo_stack = QUndoStack(self)
@@ -35,6 +52,13 @@ class MainWindow(QMainWindow):
 
         self.last_search_regex = None
         self.last_find_position = (-1, -1)  # (row, col)
+
+        self.model.cellEdited.connect(self._on_model_cell_edited)
+
+        self.table.requestInsertAbove.connect(self.insert_row_above)
+        self.table.requestInsertBelow.connect(self.insert_row_below)
+        self.table.requestDuplicate.connect(self.duplicate_row)
+        self.table.requestDelete.connect(self.delete_selected_row)
 
         self.update_window_title()
         self.create_actions()
@@ -125,9 +149,14 @@ class MainWindow(QMainWindow):
             header = [""] + data.header_fields
             rows = data.row_fields
 
-            self.table.set_data(header, rows)
+            self.model.set_data(header, rows)
+
             self.is_dirty = False
             self.update_window_title()
+
+            self.last_search_regex = None
+            self.last_find_position = (-1, -1)
+            self.undo_stack.clear()
 
         except Exception as e:
             show_error("Failed to load 2DA file.", e)
@@ -137,8 +166,8 @@ class MainWindow(QMainWindow):
             return self.save_file_as()
 
         try:
-            header, rows = self.table.extract_data()
-            self.current_data.header_fields = header[1:]  # drop synthetic index header
+            header, rows = self.model.extract_data()
+            self.current_data.header_fields = header[1:]
             self.current_data.row_fields = rows
 
             save_2da(self.current_path, self.current_data)
@@ -165,13 +194,45 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{name}{star} - Icy 2da Editor")
 
     # ------------------------------------------------------------------ #
+    # Undo hookup
+    # ------------------------------------------------------------------ #
+    def _on_model_cell_edited(self, row, col, old_text, new_text):
+        self.undo_stack.push(CellEditCommand(self.model, row, col, old_text, new_text))
+        self.is_dirty = True
+        self.update_window_title()
+
+    # ------------------------------------------------------------------ #
     # Row operations
     # ------------------------------------------------------------------ #
     def delete_selected_row(self):
         row = self.table.currentRow()
         if row < 0:
             return
-        self.table.removeRow(row)
+        self.model.removeRows(row, 1)
+        self.is_dirty = True
+        self.update_window_title()
+
+    def insert_row_above(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.model.insertRows(row, 1)
+        self.is_dirty = True
+        self.update_window_title()
+
+    def insert_row_below(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.model.insertRows(row + 1, 1)
+        self.is_dirty = True
+        self.update_window_title()
+
+    def duplicate_row(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.model.duplicateRow(row)
         self.is_dirty = True
         self.update_window_title()
 
@@ -200,50 +261,43 @@ class MainWindow(QMainWindow):
         self.last_search_regex = regex
         self.last_find_position = (-1, -1)
 
-        # Find-only mode if replacement is empty
         if rep == "":
             self.find_next()
             return
 
-        # Replace-all mode
-        for r in range(self.table.rowCount()):
-            for c in range(self.table.columnCount()):
-                item = self.table.item(r, c)
-                if not item:
-                    continue
-                text = item.text()
+        rows = self.model.rowCount()
+        cols = self.model.columnCount()
+        for r in range(rows):
+            for c in range(cols):
+                idx = self.model.index(r, c)
+                text = self.model.data(idx) or ""
                 new_text, count = regex.subn(rep, text)
                 if count > 0:
-                    item.setText(new_text)
+                    self.model.set_cell(r, c, new_text, emit_edit_signal=True)
 
     def find_next(self):
         if not self.last_search_regex:
             return
 
-        table = self.table
-        rows = table.rowCount()
-        cols = table.columnCount()
+        rows = self.model.rowCount()
+        cols = self.model.columnCount()
         if rows == 0 or cols == 0:
             return
 
         total = rows * cols
         start_r, start_c = self.last_find_position
 
-        if start_r == -1:
-            idx = 0
-        else:
-            idx = (start_r * cols + start_c + 1) % total
-
+        idx = 0 if start_r == -1 else (start_r * cols + start_c + 1) % total
         start_idx = idx
 
         while True:
             r = idx // cols
             c = idx % cols
-
-            item = table.item(r, c)
-            if item and self.last_search_regex.search(item.text()):
-                table.setCurrentCell(r, c)
-                table.scrollToItem(item)
+            mi = self.model.index(r, c)
+            text = self.model.data(mi) or ""
+            if self.last_search_regex.search(text):
+                self.table.setCurrentIndex(mi)
+                self.table.scrollTo(mi)
                 self.last_find_position = (r, c)
                 return
 
@@ -255,9 +309,8 @@ class MainWindow(QMainWindow):
         if not self.last_search_regex:
             return
 
-        table = self.table
-        rows = table.rowCount()
-        cols = table.columnCount()
+        rows = self.model.rowCount()
+        cols = self.model.columnCount()
         if rows == 0 or cols == 0:
             return
 
@@ -276,11 +329,11 @@ class MainWindow(QMainWindow):
         while True:
             r = idx // cols
             c = idx % cols
-
-            item = table.item(r, c)
-            if item and self.last_search_regex.search(item.text()):
-                table.setCurrentCell(r, c)
-                table.scrollToItem(item)
+            mi = self.model.index(r, c)
+            text = self.model.data(mi) or ""
+            if self.last_search_regex.search(text):
+                self.table.setCurrentIndex(mi)
+                self.table.scrollTo(mi)
                 self.last_find_position = (r, c)
                 return
 
@@ -289,55 +342,3 @@ class MainWindow(QMainWindow):
                 idx = total - 1
             if idx == start_idx:
                 return
-                
-    def insert_row_above(self):
-        table = self.table
-        row = table.currentRow()
-        if row < 0:
-            return
-
-        cols = table.columnCount()
-        table.insertRow(row)
-
-        # Insert empty cells
-        for c in range(cols):
-            table.setItem(row, c, table._create_empty_item())
-
-        self.is_dirty = True
-        self.update_window_title()
-
-
-    def insert_row_below(self):
-        table = self.table
-        row = table.currentRow()
-        if row < 0:
-            return
-
-        cols = table.columnCount()
-        new_row = row + 1
-        table.insertRow(new_row)
-
-        for c in range(cols):
-            table.setItem(new_row, c, table._create_empty_item())
-
-        self.is_dirty = True
-        self.update_window_title()
-
-
-    def duplicate_row(self):
-        table = self.table
-        row = table.currentRow()
-        if row < 0:
-            return
-
-        cols = table.columnCount()
-        new_row = row + 1
-        table.insertRow(new_row)
-
-        for c in range(cols):
-            item = table.item(row, c)
-            value = item.text() if item else ""
-            table.setItem(new_row, c, table._create_item(value))
-
-        self.is_dirty = True
-        self.update_window_title()
