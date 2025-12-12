@@ -47,6 +47,7 @@ class TwoDATable(QTableView):
         self._frozen_row = None
         self._frozen_row_view = QTableView(self)
         self._frozen_row_view.setFocusPolicy(Qt.NoFocus)
+        self._frozen_row_view.setAlternatingRowColors(False)
         self._frozen_row_view.verticalHeader().hide()
         self._frozen_row_view.horizontalHeader().show()
         self._frozen_row_view.verticalHeader().setSectionsMovable(False)
@@ -361,6 +362,15 @@ class TwoDATable(QTableView):
             except Exception:
                 pass
 
+        # Set column widths to match main table
+        for c in range(cols):
+            try:
+                width = self.columnWidth(c)
+                if width > 0:
+                    self._frozen_row_view.setColumnWidth(c, width)
+            except Exception:
+                pass
+
         try:
             if getattr(self, '_main_row_selection_connected', False):
                 try:
@@ -383,6 +393,13 @@ class TwoDATable(QTableView):
         try:
             self._sync_frozen_horizontal_range(self.horizontalScrollBar().minimum(), self.horizontalScrollBar().maximum())
             self._sync_frozen_horizontal_value(self.horizontalScrollBar().value())
+        except Exception:
+            pass
+
+        # Force update of the frozen row view
+        try:
+            self._frozen_row_view.update()
+            self._frozen_row_view.viewport().update()
         except Exception:
             pass
 
