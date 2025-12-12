@@ -38,8 +38,9 @@ class TwoDATable(QTableView):
         self._frozen_proxy = None
         self._main_selection_connected = False
         self._unpin_column_btn = QPushButton("?", self._frozen_view)
-        self._unpin_column_btn.setFixedSize(20, 20)
+        self._unpin_column_btn.setFixedSize(28, 20)
         self._unpin_column_btn.setToolTip("Unpin column")
+        self._unpin_column_btn.setStyleSheet("QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } QPushButton:hover { background-color: #ff5252; }")
         self._unpin_column_btn.clicked.connect(self._unpin_column)
         self._unpin_column_btn.hide()
 
@@ -61,8 +62,9 @@ class TwoDATable(QTableView):
         self._frozen_row_proxy = None
         self._main_row_selection_connected = False
         self._unpin_row_btn = QPushButton("?", self._frozen_row_view)
-        self._unpin_row_btn.setFixedSize(20, 20)
+        self._unpin_row_btn.setFixedSize(28, 20)
         self._unpin_row_btn.setToolTip("Unpin row")
+        self._unpin_row_btn.setStyleSheet("QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } QPushButton:hover { background-color: #ff5252; }")
         self._unpin_row_btn.clicked.connect(self._unpin_row)
         self._unpin_row_btn.hide()
 
@@ -508,7 +510,7 @@ class TwoDATable(QTableView):
             return
         self._unpin_column_btn.show()
         self._unpin_column_btn.raise_()
-        btn_x = self._frozen_view.width() - 25
+        btn_x = self._frozen_view.width() - 32
         btn_y = 2
         self._unpin_column_btn.move(btn_x, btn_y)
 
@@ -517,11 +519,10 @@ class TwoDATable(QTableView):
             return
         height = self._frozen_row_sizes.get(self._frozen_row, self.rowHeight(self._frozen_row))
         vp = self.viewport().geometry()
-        header_height = self.horizontalHeader().height()
         x = vp.x()
-        y = vp.y() - header_height
+        y = vp.y()
         w = vp.width()
-        h = header_height + height
+        h = height
         self._frozen_row_view.setGeometry(QRect(x, y, w, h))
         cols = self.model().columnCount()
         for c in range(cols):
@@ -543,7 +544,7 @@ class TwoDATable(QTableView):
             return
         self._unpin_row_btn.show()
         self._unpin_row_btn.raise_()
-        btn_x = max(2, self._frozen_row_view.width() - 25)
+        btn_x = max(2, self._frozen_row_view.width() - 32)
         btn_y = 2
         self._unpin_row_btn.move(btn_x, btn_y)
 
@@ -611,15 +612,10 @@ class TwoDATable(QTableView):
             sb.setValue(sb.value() + step)
             return True
         if self._frozen_row_view and obj is self._frozen_row_view.viewport() and event.type() == QEvent.Wheel:
-            sb = self.horizontalScrollBar()
+            sb = self.verticalScrollBar()
             try:
-                # Use horizontal scrolling if available, otherwise use vertical wheel for horizontal scroll
-                dx = event.angleDelta().x()
                 dy = event.angleDelta().y()
-                if dx != 0:
-                    step = -int(dx / 120) * sb.singleStep()
-                elif dy != 0:
-                    # Allow vertical wheel to scroll horizontally when over frozen row
+                if dy != 0:
                     step = -int(dy / 120) * sb.singleStep()
                 else:
                     step = 0
