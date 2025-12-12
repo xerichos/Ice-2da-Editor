@@ -7,7 +7,7 @@ DEBUG_PATH = os.path.join(ROOT, "debug")
 if DEBUG_PATH not in sys.path:
     sys.path.append(DEBUG_PATH)
 
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QAction, QUndoStack, QToolBar, QSpinBox, QLabel
 from PyQt5.QtWidgets import QUndoCommand
 from .table_view import TwoDATable
 from .table_model import TwoDATableModel
@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         self.update_window_title()
         self.create_actions()
         self.create_menu()
+        self.create_toolbar()
 
     # ------------------------------------------------------------------ #
     # Actions / Menus
@@ -132,6 +133,22 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.act_find_prev)
         edit_menu.addAction(self.act_select_all)
         edit_menu.addAction(self.act_delete_row)
+
+    def create_toolbar(self):
+        tb = QToolBar("View", self)
+        self.addToolBar(tb)
+
+        lbl = QLabel("Pinned columns:", self)
+        spin = QSpinBox(self)
+        spin.setMinimum(0)
+        spin.setMaximum(50)
+        spin.setValue(1)
+        spin.valueChanged.connect(lambda v: self.table.set_frozen_columns(v))
+
+        tb.addWidget(lbl)
+        tb.addWidget(spin)
+
+        self._pinned_spin = spin
 
     # ------------------------------------------------------------------ #
     # File operations
