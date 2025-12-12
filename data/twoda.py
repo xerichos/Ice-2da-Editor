@@ -216,7 +216,22 @@ def rebuild_line_with_calculated_positions(fmt: TwoDARow, fields: List[str], col
         if i < len(fields) - 1:
             result.append("  ")
 
-    return "".join(result).rstrip()
+    # Preserve original trailing whitespace
+    result_str = "".join(result)
+
+    # Append the original trailing whitespace (everything after the last non-whitespace)
+    orig_line = fmt.raw or ""
+    last_content_pos = len(orig_line.rstrip())
+    orig_trailing = orig_line[last_content_pos:]
+
+    # If our result is shorter than the original line, pad with original trailing whitespace
+    if len(result_str) < len(orig_line):
+        result_str += orig_trailing[:len(orig_line) - len(result_str)]
+    elif len(result_str) > len(orig_line):
+        # If longer, truncate to original length but preserve the trailing whitespace structure
+        result_str = result_str[:last_content_pos] + orig_trailing
+
+    return result_str
 
 
 def rebuild_line_dynamic(fmt: TwoDARow, new_fields: List[str], column_widths: List[int], preserve_spacing: bool = False) -> str:
@@ -240,19 +255,8 @@ def rebuild_line_dynamic(fmt: TwoDARow, new_fields: List[str], column_widths: Li
             break
 
     if preserve_spacing and not needs_expansion:
-        # Preserve original formatting exactly
-        result = list(fmt.raw or "")
-
-        for i, ((start, end), value) in enumerate(zip(fmt.spans, new_fields)):
-            orig_width = end - start
-            field_text = value[:orig_width].ljust(orig_width)
-
-            for j, char in enumerate(field_text):
-                pos = start + j
-                if pos < len(result):
-                    result[pos] = char
-
-        return ''.join(result).rstrip()
+        # Preserve original line exactly, including trailing whitespace
+        return fmt.raw or ""
     else:
         # Dynamic expansion (either requested or needed)
         result_parts = []
@@ -286,7 +290,21 @@ def rebuild_line_dynamic(fmt: TwoDARow, new_fields: List[str], column_widths: Li
 
                 result_parts.append(" " * adjusted_spacing)
 
-        return "".join(result_parts).rstrip()
+        result_str = "".join(result_parts)
+
+        # Preserve original trailing whitespace
+        orig_line = fmt.raw or ""
+        last_content_pos = len(orig_line.rstrip())
+        orig_trailing = orig_line[last_content_pos:]
+
+        # If our result is shorter than the original line, pad with original trailing whitespace
+        if len(result_str) < len(orig_line):
+            result_str += orig_trailing[:len(orig_line) - len(result_str)]
+        elif len(result_str) > len(orig_line):
+            # If longer, truncate to original length but preserve the trailing whitespace structure
+            result_str = result_str[:last_content_pos] + orig_trailing
+
+        return result_str
 
 
 def save_2da(path: str, data: TwoDAData):
