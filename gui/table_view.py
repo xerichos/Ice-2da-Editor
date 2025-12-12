@@ -534,12 +534,13 @@ class TwoDATable(QTableView):
     def _resize_frozen_row_view(self):
         if not self._frozen_row_view or not self.model() or self._frozen_row is None:
             return
-        height = self._frozen_row_sizes.get(self._frozen_row, self.rowHeight(self._frozen_row))
+        row_height = self._frozen_row_sizes.get(self._frozen_row, self.rowHeight(self._frozen_row))
+        header_height = self._frozen_row_view.horizontalHeader().height()
         vp = self.viewport().geometry()
         x = vp.x()
         y = vp.y()
         w = vp.width()
-        h = height
+        h = header_height + row_height
         self._frozen_row_view.setGeometry(QRect(x, y, w, h))
         cols = self.model().columnCount()
         for c in range(cols):
