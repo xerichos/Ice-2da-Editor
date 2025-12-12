@@ -27,12 +27,10 @@ sys.excepthook = global_exception_hook
 
 # --- Application Start -----------------------------------------------------
 
-from gui.styles import DARK_STYLE, TABLE_DARK_STYLE
 from gui.main_window import MainWindow
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet(DARK_STYLE + TABLE_DARK_STYLE)
 
     window = MainWindow()
     window.show()

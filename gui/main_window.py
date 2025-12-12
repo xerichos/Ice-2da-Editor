@@ -14,6 +14,7 @@ from .table_model import TwoDATableModel
 from .dialogs import SearchReplaceDialog
 from data.twoda import load_2da, save_2da
 from gui.error_handler import show_error
+from gui.styles import LIGHT_STYLE, DARK_STYLE, MIDNIGHT_STYLE, TABLE_LIGHT_STYLE, TABLE_DARK_STYLE, TABLE_MIDNIGHT_STYLE
 
 
 class CellEditCommand(QUndoCommand):
@@ -53,6 +54,14 @@ class MainWindow(QMainWindow):
         self.last_search_regex = None
         self.last_find_position = (-1, -1)
 
+        # Style management
+        self.current_style = "dark"  # default style
+        self.style_map = {
+            "light": (LIGHT_STYLE, TABLE_LIGHT_STYLE),
+            "dark": (DARK_STYLE, TABLE_DARK_STYLE),
+            "midnight": (MIDNIGHT_STYLE, TABLE_MIDNIGHT_STYLE)
+        }
+
         self.model.cellEdited.connect(self._on_model_cell_edited)
 
         self.table.requestInsertAbove.connect(self.insert_row_above)
@@ -63,6 +72,9 @@ class MainWindow(QMainWindow):
         self.update_window_title()
         self.create_actions()
         self.create_menu()
+
+        # Apply default dark theme
+        self.set_style("dark")
 
     # ------------------------------------------------------------------ #
     # Actions / Menus
@@ -113,6 +125,22 @@ class MainWindow(QMainWindow):
         self.act_exit = QAction("Exit", self)
         self.act_exit.triggered.connect(self.close)
 
+        # Style actions
+        self.act_style_light = QAction("Light Mode", self)
+        self.act_style_light.setCheckable(True)
+        self.act_style_light.triggered.connect(lambda: self.set_style("light"))
+
+        self.act_style_dark = QAction("Dark Mode", self)
+        self.act_style_dark.setCheckable(True)
+        self.act_style_dark.triggered.connect(lambda: self.set_style("dark"))
+
+        self.act_style_midnight = QAction("Midnight Mode", self)
+        self.act_style_midnight.setCheckable(True)
+        self.act_style_midnight.triggered.connect(lambda: self.set_style("midnight"))
+
+        # Set dark as checked by default
+        self.act_style_dark.setChecked(True)
+
     def create_menu(self):
         menubar = self.menuBar()
 
@@ -132,6 +160,33 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.act_find_prev)
         edit_menu.addAction(self.act_select_all)
         edit_menu.addAction(self.act_delete_row)
+
+        view_menu = menubar.addMenu("View")
+        style_menu = view_menu.addMenu("Theme")
+        style_menu.addAction(self.act_style_light)
+        style_menu.addAction(self.act_style_dark)
+        style_menu.addAction(self.act_style_midnight)
+
+    def set_style(self, style_name):
+        """Switch the application theme"""
+        if style_name not in self.style_map:
+            return
+
+        # Update current style
+        self.current_style = style_name
+
+        # Get the style sheets
+        main_style, table_style = self.style_map[style_name]
+
+        # Apply the styles to the application
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        app.setStyleSheet(main_style + table_style)
+
+        # Update action check states
+        self.act_style_light.setChecked(style_name == "light")
+        self.act_style_dark.setChecked(style_name == "dark")
+        self.act_style_midnight.setChecked(style_name == "midnight")
 
     # ------------------------------------------------------------------ #
     # File operations
