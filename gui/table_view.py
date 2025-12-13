@@ -1,6 +1,8 @@
 from PyQt5.QtWidgets import QTableView, QMenu, QAction, QHeaderView, QAbstractItemView, QPushButton, QAbstractItemView, QScroller, QHeaderView
 from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, QModelIndex, QAbstractTableModel, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QRect, QModelIndex, QAbstractTableModel, QEvent, QTimer
+
+PAN_START_THRESHOLD = 8  # pixels
 
 
 class TwoDATable(QTableView):
@@ -17,6 +19,16 @@ class TwoDATable(QTableView):
         vh = self.verticalHeader()
         vh.setSectionResizeMode(QHeaderView.Fixed)
         vh.setDefaultSectionSize(22) 
+        self._panning = False
+        self._pan_last_pos = None
+        self._pan_dx = 0.0
+        self._pan_dy = 0.0
+
+        self._pan_timer = QTimer(self)
+        self._pan_timer.setInterval(33)  # ~30 Hz
+        self._pan_timer.timeout.connect(self._apply_pan)
+
+
 
         QScroller.grabGesture(
         self.viewport(),
@@ -656,3 +668,116 @@ class TwoDATable(QTableView):
             sb.setValue(sb.value() + step)
             return True
         return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._panning = True
+            self._pan_origin_pos = event.pos()
+            self._pan_last_pos = event.pos()
+            self._pan_dx = 0.0
+            self._pan_dy = 0.0
+            self._pan_active = False  # NEW
+            self.setCursor(Qt.OpenHandCursor)
+            self._pan_timer.start()
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+
+
+
+    def mouseMoveEvent(self, event):
+        if self._panning and self._pan_last_pos is not None:
+            delta = event.pos() - self._pan_last_pos
+            self._pan_last_pos = event.pos()
+
+            # Check if drag is intentional
+            if not self._pan_active:
+                total_delta = event.pos() - self._pan_origin_pos
+                if abs(total_delta.x()) < PAN_START_THRESHOLD and abs(total_delta.y()) < PAN_START_THRESHOLD:
+                    event.accept()
+                    return
+
+                # Threshold crossed ? activate panning
+                self._pan_active = True
+                self.setCursor(Qt.ClosedHandCursor)
+
+            self._pan_dx += delta.x()
+            self._pan_dy += delta.y()
+
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+
+
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._panning:
+            self._panning = False
+            self._pan_active = False
+            self._pan_origin_pos = None
+            self._pan_last_pos = None
+            self._pan_dx = 0.0
+            self._pan_dy = 0.0
+            self._pan_timer.stop()
+            self.unsetCursor()
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+
+
+    def _apply_pan(self):
+        if not self._panning:
+            return
+
+        if not (self._pan_dx or self._pan_dy):
+            return
+
+        hbar = self.horizontalScrollBar()
+        vbar = self.verticalScrollBar()
+
+        viewport = self.viewport()
+        vw = max(1, viewport.width())
+        vh = max(1, viewport.height())
+
+        # --- Dead-zone filtering (ignore mouse noise) ---
+        DEAD_ZONE = 2.0
+        if abs(self._pan_dx) < DEAD_ZONE:
+            self._pan_dx = 0.0
+        if abs(self._pan_dy) < DEAD_ZONE:
+            self._pan_dy = 0.0
+
+        if not (self._pan_dx or self._pan_dy):
+            return
+
+        # --- Convert mouse deltas to scroll deltas ---
+        dx = self._pan_dx * (hbar.pageStep() / vw)
+        dy = self._pan_dy * (vbar.pageStep() / vh)
+
+        # --- Quantize to stable steps ---
+        # Vertical: snap to whole rows
+        row_h = self.rowHeight(0) if self.model().rowCount() else 1
+        min_v_step = max(1, row_h // 2)
+
+        # Horizontal: snap to small column chunks
+        min_h_step = max(4, hbar.pageStep() // 20)
+
+        ix = int(dx / min_h_step) * min_h_step
+        iy = int(dy / min_v_step) * min_v_step
+
+        if ix or iy:
+            hbar.setValue(hbar.value() - ix)
+            vbar.setValue(vbar.value() - iy)
+
+            # Consume only what we applied
+            if ix:
+                self._pan_dx = 0.0
+            if iy:
+                self._pan_dy = 0.0
+
+
