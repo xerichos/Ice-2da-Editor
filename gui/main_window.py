@@ -68,6 +68,7 @@ class MainWindow(QMainWindow):
         # ------------------------------------------------------------
         self.create_actions()
         self.create_menu()
+        self.create_toolbar()
         self.set_style(self.current_style)
         self.restore_session()
 
@@ -655,3 +656,22 @@ class MainWindow(QMainWindow):
                 self.check_external_modification(doc)
         super().changeEvent(event)
 
+
+    def create_toolbar(self):
+        tb = self.addToolBar("Main")
+        tb.setMovable(False)
+
+        # File actions
+        tb.addAction(self.act_open)
+        tb.addAction(self.act_save)
+        tb.addAction(self.act_save_all)
+
+        tb.addSeparator()
+
+        # Edit actions
+        tb.addAction(self.act_undo)
+        tb.addAction(self.act_redo)
+
+        tb.addSeparator()
+
+        tb.addAction(self.act_search)
