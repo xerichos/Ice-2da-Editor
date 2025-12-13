@@ -23,6 +23,8 @@ from gui.styles import (
     TABLE_LIGHT_STYLE, TABLE_DARK_STYLE, TABLE_MIDNIGHT_STYLE
 )
 
+MAX_RECENT_FILES = 10
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -120,6 +122,16 @@ class MainWindow(QMainWindow):
         self.act_save_all.setShortcut("Ctrl+Shift+S")
         self.act_save_all.triggered.connect(self.save_all)
 
+        self.act_next_tab = QAction(self)
+        self.act_next_tab.setShortcut("Ctrl+Tab")
+        self.act_next_tab.triggered.connect(self.next_tab)
+        self.addAction(self.act_next_tab)
+
+        self.act_prev_tab = QAction(self)
+        self.act_prev_tab.setShortcut("Ctrl+Shift+Tab")
+        self.act_prev_tab.triggered.connect(self.previous_tab)
+        self.addAction(self.act_prev_tab)
+
 
         # Theme actions
         self.act_style_light = QAction("Light Mode", self, checkable=True)
@@ -135,6 +147,9 @@ class MainWindow(QMainWindow):
 
         file_menu = mb.addMenu("File")
         file_menu.addAction(self.act_open)
+        self.recent_menu = file_menu.addMenu("Recent Files")
+        self.update_recent_menu()
+        
         file_menu.addAction(self.act_save)
         file_menu.addAction(self.act_save_as)
         file_menu.addSeparator()
@@ -222,6 +237,8 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentIndex(index)
 
             self.update_tab_title(doc)
+            self.add_recent_file(path)
+
 
         except Exception as e:
             show_error("Failed to load 2DA file.", e)
@@ -443,14 +460,32 @@ class MainWindow(QMainWindow):
                 self.save_file()
 
     def closeEvent(self, event):
+        dirty_docs = [
+            self.tabs.widget(i)
+            for i in range(self.tabs.count())
+            if getattr(self.tabs.widget(i), "is_dirty", False)
+        ]
+
+        if dirty_docs:
+            res = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "There are unsaved files. Exit anyway?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if res != QMessageBox.Yes:
+                event.ignore()
+                return
+            
         paths = []
         for i in range(self.tabs.count()):
             doc = self.tabs.widget(i)
-            if isinstance(doc, TwoDADocument) and doc.current_path:
+            if doc.current_path:
                 paths.append(doc.current_path)
-
         self.settings.setValue("session/files", paths)
+
         super().closeEvent(event)
+
 
     def restore_session(self):
         paths = self.settings.value("session/files", [])
@@ -480,3 +515,64 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
+    def next_tab(self):
+        count = self.tabs.count()
+        if count < 2:
+            return
+        self.tabs.setCurrentIndex((self.tabs.currentIndex() + 1) % count)
+
+    def previous_tab(self):
+        count = self.tabs.count()
+        if count < 2:
+            return
+        self.tabs.setCurrentIndex((self.tabs.currentIndex() - 1) % count)
+
+
+    def add_recent_file(self, path):
+        files = self.settings.value("recent/files", [])
+        if path in files:
+            files.remove(path)
+        files.insert(0, path)
+        files = files[:MAX_RECENT_FILES]
+        self.settings.setValue("recent/files", files)
+        self.update_recent_menu()
+
+    def update_recent_menu(self):
+        self.recent_menu.clear()
+        files = self.settings.value("recent/files", [])
+        for path in files:
+            if os.path.exists(path):
+                act = QAction(path, self)
+                act.triggered.connect(lambda _, p=path: self.open_recent_file(p))
+                self.recent_menu.addAction(act)
+
+        if not files:
+            empty = QAction("(No recent files)", self)
+            empty.setEnabled(False)
+            self.recent_menu.addAction(empty)
+
+    def open_recent_file(self, path):
+        if not os.path.exists(path):
+            return
+        try:
+            data = load_2da(path)
+
+            doc = TwoDADocument()
+            doc.current_path = path
+            doc.current_data = data
+
+            header = [""] + data.header_fields
+            rows = data.row_fields
+            doc.model.set_data(header, rows)
+
+            doc.model.cellEdited.connect(
+                lambda r, c, o, n, d=doc:
+                    d.undo_stack.push(CellEditCommand(d, r, c, o, n))
+            )
+
+            self.tabs.addTab(doc, os.path.basename(path))
+            self.update_tab_title(doc)
+            self.tabs.setCurrentWidget(doc)
+
+        except Exception as e:
+            show_error("Failed to open recent file.", e)
