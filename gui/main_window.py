@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Icy 2DA Editor")
         self.resize(1200, 700)
+        self._checking_external_change = False
 
         # ------------------------------------------------------------
         # Tabs
@@ -45,6 +46,7 @@ class MainWindow(QMainWindow):
         self.tabs.customContextMenuRequested.connect(self.open_tab_context_menu)
         self.tabs.tabBar().installEventFilter(self)
         self.tabs.setMovable(True)
+        
 
 
 
@@ -149,7 +151,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.act_open)
         self.recent_menu = file_menu.addMenu("Recent Files")
         self.update_recent_menu()
-        
+
         file_menu.addAction(self.act_save)
         file_menu.addAction(self.act_save_as)
         file_menu.addSeparator()
@@ -238,6 +240,8 @@ class MainWindow(QMainWindow):
 
             self.update_tab_title(doc)
             self.add_recent_file(path)
+            doc._last_mtime = os.path.getmtime(path)
+
 
 
         except Exception as e:
@@ -246,6 +250,9 @@ class MainWindow(QMainWindow):
     def save_file(self):
         doc = self.current_doc()
         if not doc:
+            return
+
+        if self.check_external_modification(doc):
             return
 
         if not doc.current_path:
@@ -259,6 +266,8 @@ class MainWindow(QMainWindow):
             save_2da(doc.current_path, doc.current_data)
             doc.is_dirty = False
             self.update_tab_title(doc)
+            doc._last_mtime = os.path.getmtime(doc.current_path)
+
 
         except Exception as e:
             show_error("Failed to save 2DA file.", e)
@@ -539,17 +548,28 @@ class MainWindow(QMainWindow):
 
     def update_recent_menu(self):
         self.recent_menu.clear()
-        files = self.settings.value("recent/files", [])
-        for path in files:
-            if os.path.exists(path):
-                act = QAction(path, self)
-                act.triggered.connect(lambda _, p=path: self.open_recent_file(p))
-                self.recent_menu.addAction(act)
 
-        if not files:
+        files = self.settings.value("recent/files", [])
+        # Normalize + prune missing
+        cleaned = []
+        for p in files:
+            if isinstance(p, str) and os.path.exists(p):
+                cleaned.append(p)
+
+        # Persist cleaned list if changed
+        if cleaned != files:
+            self.settings.setValue("recent/files", cleaned)
+
+        for path in cleaned:
+            act = QAction(path, self)
+            act.triggered.connect(lambda _, p=path: self.open_recent_file(p))
+            self.recent_menu.addAction(act)
+
+        if not cleaned:
             empty = QAction("(No recent files)", self)
             empty.setEnabled(False)
             self.recent_menu.addAction(empty)
+
 
     def open_recent_file(self, path):
         if not os.path.exists(path):
@@ -576,3 +596,62 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             show_error("Failed to open recent file.", e)
+
+
+    def check_external_modification(self, doc):
+        # Reentrancy guard: QMessageBox triggers activation changes
+        if getattr(self, "_checking_external_change", False):
+            return False
+
+        if not doc or not doc.current_path or not os.path.exists(doc.current_path):
+            return False
+
+        try:
+            current_mtime = os.path.getmtime(doc.current_path)
+        except OSError:
+            return False
+
+        last_mtime = getattr(doc, "_last_mtime", None)
+        if last_mtime is None or current_mtime == last_mtime:
+            return False
+
+        # Suppress re-entry while the dialog is open
+        self._checking_external_change = True
+        try:
+            res = QMessageBox.question(
+                self,
+                "File Modified",
+                "This file was modified outside the editor.\n\nReload from disk?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+        finally:
+            self._checking_external_change = False
+
+        if res == QMessageBox.Yes:
+            try:
+                data = load_2da(doc.current_path)
+                doc.current_data = data
+
+                header = [""] + data.header_fields
+                rows = data.row_fields
+                doc.model.set_data(header, rows)
+
+                doc.is_dirty = False
+                self.update_tab_title(doc)
+
+            except Exception as e:
+                show_error("Failed to reload file.", e)
+
+        # IMPORTANT: acknowledge the external change in all cases
+        doc._last_mtime = current_mtime
+        return True
+
+
+    
+    def changeEvent(self, event):
+        if event.type() == event.ActivationChange and self.isActiveWindow():
+            doc = self.current_doc()
+            if doc:
+                self.check_external_modification(doc)
+        super().changeEvent(event)
+
