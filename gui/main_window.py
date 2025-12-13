@@ -7,9 +7,10 @@ from PyQt5.QtWidgets import (
     QAction,
     QTabWidget,
     QMessageBox,
-)
-from PyQt5.QtCore import QSettings
+    QMenu
 
+)
+from PyQt5.QtCore import QSettings, Qt
 from gui.document import TwoDADocument
 from gui.cell_edit_command import CellEditCommand
 from data.twoda import load_2da, save_2da
@@ -36,6 +37,9 @@ class MainWindow(QMainWindow):
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.setCentralWidget(self.tabs)
+        self.tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tabs.customContextMenuRequested.connect(self.open_tab_context_menu)
+
 
         # ------------------------------------------------------------
         # Style management
@@ -282,3 +286,52 @@ class MainWindow(QMainWindow):
         doc = self.current_doc()
         if doc:
             fn(doc)
+
+    def open_tab_context_menu(self, pos):
+        tab_bar = self.tabs.tabBar()
+        index = tab_bar.tabAt(pos)
+        if index < 0:
+            return
+
+        doc = self.tabs.widget(index)
+        if not isinstance(doc, TwoDADocument):
+            return
+
+        menu = QMenu(self)
+
+        act_close = menu.addAction("Close")
+        act_close_others = menu.addAction("Close Others")
+        act_close_all = menu.addAction("Close All")
+        menu.addSeparator()
+        act_save = menu.addAction("Save")
+        act_save_as = menu.addAction("Save As?")
+
+        action = menu.exec_(tab_bar.mapToGlobal(pos))
+        if not action:
+            return
+
+        if action == act_close:
+            self.close_tab(index)
+
+        elif action == act_close_others:
+            self.close_other_tabs(index)
+
+        elif action == act_close_all:
+            self.close_all_tabs()
+
+        elif action == act_save:
+            self.tabs.setCurrentIndex(index)
+            self.save_file()
+
+        elif action == act_save_as:
+            self.tabs.setCurrentIndex(index)
+            self.save_file_as()
+
+    def close_other_tabs(self, keep_index):
+        for i in reversed(range(self.tabs.count())):
+            if i != keep_index:
+                self.close_tab(i)
+
+    def close_all_tabs(self):
+        for i in reversed(range(self.tabs.count())):
+            self.close_tab(i)
