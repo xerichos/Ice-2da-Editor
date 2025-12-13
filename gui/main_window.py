@@ -7,7 +7,8 @@ from PyQt5.QtWidgets import (
     QAction,
     QTabWidget,
     QMessageBox,
-    QMenu
+    QMenu,
+    QApplication
 
 )
 from PyQt5.QtCore import QSettings, Qt
@@ -141,6 +142,26 @@ class MainWindow(QMainWindow):
         theme_menu.addAction(self.act_style_dark)
         theme_menu.addAction(self.act_style_midnight)
 
+        self.act_close_tab = QAction("Close Tab", self)
+        self.act_close_tab.setShortcut("Ctrl+W")
+        self.act_close_tab.triggered.connect(
+            lambda: self._with_doc(lambda d: self.close_tab(self.tabs.currentIndex()))
+        )
+        self.addAction(self.act_close_tab)
+
+        self.act_close_others = QAction("Close Other Tabs", self)
+        self.act_close_others.setShortcut("Ctrl+Shift+W")
+        self.act_close_others.triggered.connect(
+            lambda: self.close_other_tabs(self.tabs.currentIndex())
+        )
+        self.addAction(self.act_close_others)
+
+        self.act_close_all = QAction("Close All Tabs", self)
+        self.act_close_all.setShortcut("Ctrl+Alt+W")
+        self.act_close_all.triggered.connect(self.close_all_tabs)
+        self.addAction(self.act_close_all)
+
+
     # ==============================================================
     # Style
     # ==============================================================
@@ -230,12 +251,16 @@ class MainWindow(QMainWindow):
         idx = self.tabs.indexOf(doc)
         if idx < 0:
             return
+
         name = os.path.basename(doc.current_path) if doc.current_path else "Untitled"
         star = "*" if doc.is_dirty else ""
-        self.tabs.setTabText(idx, name + star)
+        self.tabs.setTabText(idx, f"{name}{star}")
+
+
 
     def close_tab(self, index):
         doc = self.tabs.widget(index)
+
         if doc.is_dirty:
             res = QMessageBox.question(
                 self,
@@ -296,6 +321,52 @@ class MainWindow(QMainWindow):
         doc = self.tabs.widget(index)
         if not isinstance(doc, TwoDADocument):
             return
+
+        menu = QMenu(self)
+
+        act_close = menu.addAction("Close")
+
+        act_close_others = menu.addAction("Close Others")
+        act_close_all = menu.addAction("Close All")
+        menu.addSeparator()
+
+        act_save = menu.addAction("Save")
+        act_save_as = menu.addAction("Save As?")
+        menu.addSeparator()
+
+        act_reveal = menu.addAction("Reveal in File Explorer")
+        act_copy_path = menu.addAction("Copy Full Path")
+        menu.addSeparator()
+
+        action = menu.exec_(tab_bar.mapToGlobal(pos))
+        if not action:
+            return
+
+        self.tabs.setCurrentIndex(index)
+
+        if action == act_close:
+            self.close_tab(index)
+
+        elif action == act_close_others:
+            self.close_other_tabs(index)
+
+        elif action == act_close_all:
+            self.close_all_tabs()
+
+        elif action == act_save:
+            self.save_file()
+
+        elif action == act_save_as:
+            self.save_file_as()
+
+        elif action == act_reveal:
+            if doc.current_path:
+                os.startfile(os.path.dirname(doc.current_path))
+
+        elif action == act_copy_path:
+            if doc.current_path:
+                QApplication.clipboard().setText(doc.current_path)
+
 
         menu = QMenu(self)
 
