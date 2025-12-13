@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 
 )
 from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtGui import QIcon
 from gui.document import TwoDADocument
 from gui.cell_edit_command import CellEditCommand
 from data.twoda import load_2da, save_2da
@@ -40,6 +41,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
         self.tabs.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabs.customContextMenuRequested.connect(self.open_tab_context_menu)
+        self.tabs.tabBar().installEventFilter(self)
+        self.tabs.setMovable(True)
+
+
 
 
         # ------------------------------------------------------------
@@ -60,6 +65,8 @@ class MainWindow(QMainWindow):
         self.create_actions()
         self.create_menu()
         self.set_style(self.current_style)
+        self.restore_session()
+
 
     # ==============================================================
     # Helpers
@@ -81,7 +88,7 @@ class MainWindow(QMainWindow):
         self.act_save.triggered.connect(self.save_file)
 
         self.act_save_as = QAction("Save As", self)
-        self.act_save_as.setShortcut("Ctrl+Shift+S")
+        self.act_save_as.setShortcut("Ctrl+Alt+S")
         self.act_save_as.triggered.connect(self.save_file_as)
 
         self.act_exit = QAction("Exit", self)
@@ -109,6 +116,11 @@ class MainWindow(QMainWindow):
         self.act_find_prev.triggered.connect(lambda: self._with_doc(lambda d: d.find_previous()))
         self.addAction(self.act_find_prev)
 
+        self.act_save_all = QAction("Save All", self)
+        self.act_save_all.setShortcut("Ctrl+Shift+S")
+        self.act_save_all.triggered.connect(self.save_all)
+
+
         # Theme actions
         self.act_style_light = QAction("Light Mode", self, checkable=True)
         self.act_style_dark = QAction("Dark Mode", self, checkable=True)
@@ -127,6 +139,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.act_save_as)
         file_menu.addSeparator()
         file_menu.addAction(self.act_exit)
+        file_menu.addAction(self.act_save_all)
+
 
         edit_menu = mb.addMenu("Edit")
         edit_menu.addAction(self.act_undo)
@@ -253,8 +267,13 @@ class MainWindow(QMainWindow):
             return
 
         name = os.path.basename(doc.current_path) if doc.current_path else "Untitled"
-        star = "*" if doc.is_dirty else ""
-        self.tabs.setTabText(idx, f"{name}{star}")
+        self.tabs.setTabText(idx, name)
+
+        if doc.is_dirty:
+            self.tabs.setTabIcon(idx, self.style().standardIcon(self.style().SP_DialogApplyButton))
+        else:
+            self.tabs.setTabIcon(idx, QIcon())
+
 
 
 
@@ -406,3 +425,58 @@ class MainWindow(QMainWindow):
     def close_all_tabs(self):
         for i in reversed(range(self.tabs.count())):
             self.close_tab(i)
+
+    def eventFilter(self, obj, event):
+        if obj is self.tabs.tabBar() and event.type() == event.MouseButtonRelease:
+            if event.button() == Qt.MiddleButton:
+                index = obj.tabAt(event.pos())
+                if index >= 0:
+                    self.close_tab(index)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def save_all(self):
+        for i in range(self.tabs.count()):
+            doc = self.tabs.widget(i)
+            if isinstance(doc, TwoDADocument) and doc.is_dirty:
+                self.tabs.setCurrentIndex(i)
+                self.save_file()
+
+    def closeEvent(self, event):
+        paths = []
+        for i in range(self.tabs.count()):
+            doc = self.tabs.widget(i)
+            if isinstance(doc, TwoDADocument) and doc.current_path:
+                paths.append(doc.current_path)
+
+        self.settings.setValue("session/files", paths)
+        super().closeEvent(event)
+
+    def restore_session(self):
+        paths = self.settings.value("session/files", [])
+        if not paths:
+            return
+
+        for path in paths:
+            if isinstance(path, str) and os.path.exists(path):
+                try:
+                    data = load_2da(path)
+                    doc = TwoDADocument()
+                    doc.current_path = path
+                    doc.current_data = data
+
+                    header = [""] + data.header_fields
+                    rows = data.row_fields
+                    doc.model.set_data(header, rows)
+
+                    doc.model.cellEdited.connect(
+                        lambda r, c, o, n, d=doc:
+                            d.undo_stack.push(CellEditCommand(d, r, c, o, n))
+                    )
+
+                    self.tabs.addTab(doc, os.path.basename(path))
+                    self.update_tab_title(doc)
+
+                except Exception:
+                    pass
+
