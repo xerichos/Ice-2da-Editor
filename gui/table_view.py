@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QTableView, QMenu, QAction, QHeaderView, QAbstractItemView, QPushButton
+from PyQt5.QtWidgets import QTableView, QMenu, QAction, QHeaderView, QAbstractItemView, QPushButton, QAbstractItemView, QScroller, QHeaderView
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QModelIndex, QAbstractTableModel, QEvent
 
@@ -13,6 +13,15 @@ class TwoDATable(QTableView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        vh = self.verticalHeader()
+        vh.setSectionResizeMode(QHeaderView.Fixed)
+        vh.setDefaultSectionSize(22) 
+
+        QScroller.grabGesture(
+        self.viewport(),
+        QScroller.LeftMouseButtonGesture
+        )
 
         self.setAlternatingRowColors(False)
         self.setSortingEnabled(False)
@@ -82,6 +91,11 @@ class TwoDATable(QTableView):
         self.horizontalScrollBar().valueChanged.connect(self._sync_frozen_horizontal_value)
         self.horizontalScrollBar().rangeChanged.connect(self._sync_frozen_horizontal_range)
         self._frozen_row_view.viewport().installEventFilter(self)
+
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        
+        
 
     def currentRow(self):
         idx = self.currentIndex()
