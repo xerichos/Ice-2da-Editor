@@ -42,7 +42,6 @@ QTabBar::tab:selected {
 QTabBar::tab:hover {
     background-color: #e9ecef;
 }
-
 """
 
 TABLE_LIGHT_STYLE = TABLE_VIEW_BASE + """
@@ -64,6 +63,12 @@ QHeaderView::section {
 /* Pinned column (clearly visible, solid) */
 QTableView#FrozenColumnView {
     background-color: #e6e9ee;
+}
+
+QTableCornerButton::section {
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
 }
 """
 
@@ -123,6 +128,13 @@ QHeaderView::section {
 QTableView#FrozenColumnView {
     background-color: #383838;
 }
+
+QTableCornerButton::section {
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
 """
 
 # ------------------------------------------------------------
@@ -180,5 +192,11 @@ QHeaderView::section {
 /* Pinned column (stronger contrast, still safe) */
 QTableView#FrozenColumnView {
     background-color: #1d1d3f;
+}
+
+QTableCornerButton::section {
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
 }
 """
