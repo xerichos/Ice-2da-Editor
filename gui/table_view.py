@@ -1,6 +1,23 @@
-from PyQt5.QtWidgets import QTableView, QMenu, QAction, QHeaderView, QAbstractItemView, QPushButton, QAbstractItemView, QScroller, QHeaderView
+from PyQt5.QtWidgets import (
+    QTableView,
+    QMenu,
+    QAction,
+    QHeaderView,
+    QAbstractItemView,
+    QPushButton,
+    QScroller,
+    QFrame,
+)
 from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, QModelIndex, QAbstractTableModel, QEvent, QTimer
+from PyQt5.QtCore import (
+    Qt,
+    pyqtSignal,
+    QRect,
+    QModelIndex,
+    QAbstractTableModel,
+    QEvent,
+    QTimer,
+)
 
 PAN_START_THRESHOLD = 8  # pixels
 
@@ -16,9 +33,16 @@ class TwoDATable(QTableView):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        # --- Row metrics on the MAIN view ---
         vh = self.verticalHeader()
         vh.setSectionResizeMode(QHeaderView.Fixed)
-        vh.setDefaultSectionSize(22) 
+        vh.setDefaultSectionSize(22)
+
+        # NOTE: frames/borders can subtly affect layout; remove them for consistency
+        self.setFrameShape(QFrame.NoFrame)
+        self.setLineWidth(0)
+        self.setMidLineWidth(0)
+
         self._panning = False
         self._pan_last_pos = None
         self._pan_dx = 0.0
@@ -28,12 +52,7 @@ class TwoDATable(QTableView):
         self._pan_timer.setInterval(33)  # ~30 Hz
         self._pan_timer.timeout.connect(self._apply_pan)
 
-
-
-        QScroller.grabGesture(
-        self.viewport(),
-        QScroller.LeftMouseButtonGesture
-        )
+        QScroller.grabGesture(self.viewport(), QScroller.LeftMouseButtonGesture)
 
         self.setAlternatingRowColors(False)
         self.setSortingEnabled(False)
@@ -41,32 +60,73 @@ class TwoDATable(QTableView):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_context_menu)
 
+        # ------------------------------------------------------------
+        # Frozen column
+        # ------------------------------------------------------------
         self._frozen_column = None
         self._frozen_view = QTableView(self)
+
+        # Make frozen view an overlay, not a framed widget
+        self._frozen_view.setFrameShape(QFrame.NoFrame)
+        self._frozen_view.setLineWidth(0)
+        self._frozen_view.setMidLineWidth(0)
+
         self._frozen_view.setFocusPolicy(Qt.NoFocus)
         self._frozen_view.verticalHeader().hide()
-        self._frozen_view.horizontalHeader().show()
         self._frozen_view.horizontalHeader().setSectionsMovable(False)
         self._frozen_view.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+
+        # Always keep frozen header hidden (main header is the one user sees)
+        self._frozen_view.horizontalHeader().hide()
+
         self._frozen_view.setSelectionBehavior(self.selectionBehavior())
         self._frozen_view.setSelectionMode(self.selectionMode())
         self._frozen_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._frozen_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._frozen_view.setEditTriggers(self.editTriggers())
         self._frozen_view.hide()
+        self._frozen_view.setObjectName("FrozenColumnView")
+
+
+
+        # Keep scroll modes identical across views
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._frozen_view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._frozen_view.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+
+        # Keep "grid" policy identical (whatever the main table uses)
+        self._frozen_view.setShowGrid(self.showGrid())
+
+        # Match vertical header sizing rules (even if hidden, metrics matter)
+        fvh = self._frozen_view.verticalHeader()
+        fvh.setSectionResizeMode(QHeaderView.Fixed)
+        fvh.setDefaultSectionSize(vh.defaultSectionSize())
+        fvh.setMinimumSectionSize(vh.minimumSectionSize())
 
         self._frozen_col_sizes = {}
         self._frozen_proxy = None
         self._main_selection_connected = False
+
         self._unpin_column_btn = QPushButton("?", self._frozen_view)
         self._unpin_column_btn.setFixedSize(28, 20)
         self._unpin_column_btn.setToolTip("Unpin column")
-        self._unpin_column_btn.setStyleSheet("QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } QPushButton:hover { background-color: #ff5252; }")
+        self._unpin_column_btn.setStyleSheet(
+            "QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } "
+            "QPushButton:hover { background-color: #ff5252; }"
+        )
         self._unpin_column_btn.clicked.connect(self._unpin_column)
         self._unpin_column_btn.hide()
 
+
         self._frozen_row = None
         self._frozen_row_view = QTableView(self)
+
+        # Overlay (no frame)
+        self._frozen_row_view.setFrameShape(QFrame.NoFrame)
+        self._frozen_row_view.setLineWidth(0)
+        self._frozen_row_view.setMidLineWidth(0)
+
         self._frozen_row_view.setFocusPolicy(Qt.NoFocus)
         self._frozen_row_view.setAlternatingRowColors(False)
         self._frozen_row_view.verticalHeader().hide()
@@ -80,19 +140,31 @@ class TwoDATable(QTableView):
         self._frozen_row_view.setEditTriggers(self.editTriggers())
         self._frozen_row_view.hide()
 
+        self._frozen_row_view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._frozen_row_view.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._frozen_row_view.setShowGrid(self.showGrid())
+
         self._frozen_row_sizes = {}
         self._frozen_row_proxy = None
         self._main_row_selection_connected = False
+
         self._unpin_row_btn = QPushButton("?", self._frozen_row_view)
         self._unpin_row_btn.setFixedSize(28, 20)
         self._unpin_row_btn.setToolTip("Unpin row")
-        self._unpin_row_btn.setStyleSheet("QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } QPushButton:hover { background-color: #ff5252; }")
+        self._unpin_row_btn.setStyleSheet(
+            "QPushButton { background-color: #ff6b6b; color: white; border: 1px solid #cc5555; font-weight: bold; } "
+            "QPushButton:hover { background-color: #ff5252; }"
+        )
         self._unpin_row_btn.clicked.connect(self._unpin_row)
         self._unpin_row_btn.hide()
 
+        # ------------------------------------------------------------
+        # Signals
+        # ------------------------------------------------------------
         self.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._frozen_view.horizontalHeader().sectionClicked.connect(self._on_frozen_header_clicked)
         self.horizontalHeader().sectionResized.connect(self._on_section_resized)
+
         self.verticalScrollBar().valueChanged.connect(self._sync_frozen_vertical_value)
         self.verticalScrollBar().rangeChanged.connect(self._sync_frozen_vertical_range)
         self._frozen_view.viewport().installEventFilter(self)
@@ -100,14 +172,15 @@ class TwoDATable(QTableView):
         self.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
         self._frozen_row_view.horizontalHeader().sectionClicked.connect(self._on_frozen_row_header_clicked)
         self.verticalHeader().sectionResized.connect(self._on_row_section_resized)
+
         self.horizontalScrollBar().valueChanged.connect(self._sync_frozen_horizontal_value)
         self.horizontalScrollBar().rangeChanged.connect(self._sync_frozen_horizontal_range)
         self._frozen_row_view.viewport().installEventFilter(self)
 
-        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        
-        
+        # Hard-sync frozen row heights whenever main header resizes rows
+        self.verticalHeader().sectionResized.connect(
+            lambda r, old, new: self._frozen_view.setRowHeight(r, new)
+        )
 
     def currentRow(self):
         idx = self.currentIndex()
@@ -115,6 +188,7 @@ class TwoDATable(QTableView):
 
     def setModel(self, model):
         super().setModel(model)
+
         if self._frozen_view:
             try:
                 self._frozen_view.setItemDelegate(self.itemDelegate())
@@ -124,7 +198,10 @@ class TwoDATable(QTableView):
                 self._frozen_view.setEditTriggers(self.editTriggers())
             except Exception:
                 pass
+            # Ensure frozen view stays metric-compatible with main view
+            self._frozen_view.setShowGrid(self.showGrid())
             self._update_frozen_columns()
+
         if self._frozen_row_view:
             try:
                 self._frozen_row_view.setItemDelegate(self.itemDelegate())
@@ -134,6 +211,7 @@ class TwoDATable(QTableView):
                 self._frozen_row_view.setEditTriggers(self.editTriggers())
             except Exception:
                 pass
+            self._frozen_row_view.setShowGrid(self.showGrid())
             self._update_frozen_rows()
 
     def setItemDelegate(self, delegate):
@@ -200,6 +278,7 @@ class TwoDATable(QTableView):
 
         for c in range(cols):
             self.setColumnHidden(c, c == self._frozen_column)
+
         if self._frozen_row_view and self._frozen_row is not None:
             for c in range(cols):
                 self._frozen_row_view.setColumnHidden(c, c == self._frozen_column)
@@ -270,7 +349,7 @@ class TwoDATable(QTableView):
                 pass
 
         try:
-            if getattr(self, '_main_selection_connected', False):
+            if getattr(self, "_main_selection_connected", False):
                 try:
                     self.selectionModel().currentChanged.disconnect(self._on_main_current_changed)
                 except Exception:
@@ -280,17 +359,23 @@ class TwoDATable(QTableView):
         except Exception:
             pass
 
-        self._frozen_view.horizontalHeader().show()
+        # Keep header hidden always
+        self._frozen_view.horizontalHeader().hide()
+
         self._frozen_view.show()
         try:
             self._frozen_view.raise_()
         except Exception:
             pass
+
         self._resize_frozen_view()
         self._update_unpin_column_button()
 
         try:
-            self._sync_frozen_vertical_range(self.verticalScrollBar().minimum(), self.verticalScrollBar().maximum())
+            self._sync_frozen_vertical_range(
+                self.verticalScrollBar().minimum(),
+                self.verticalScrollBar().maximum(),
+            )
             self._sync_frozen_vertical_value(self.verticalScrollBar().value())
         except Exception:
             pass
@@ -306,7 +391,7 @@ class TwoDATable(QTableView):
             for r in range(rows):
                 self.setRowHidden(r, False)
             self._frozen_row_view.hide()
-            if hasattr(self, '_unpin_row_btn') and self._unpin_row_btn:
+            if hasattr(self, "_unpin_row_btn") and self._unpin_row_btn:
                 self._unpin_row_btn.hide()
             return
 
@@ -388,7 +473,6 @@ class TwoDATable(QTableView):
             except Exception:
                 pass
 
-        # Set column widths to match main table
         for c in range(cols):
             try:
                 width = self.columnWidth(c)
@@ -398,7 +482,7 @@ class TwoDATable(QTableView):
                 pass
 
         try:
-            if getattr(self, '_main_row_selection_connected', False):
+            if getattr(self, "_main_row_selection_connected", False):
                 try:
                     self.selectionModel().currentChanged.disconnect(self._on_main_row_current_changed)
                 except Exception:
@@ -413,16 +497,19 @@ class TwoDATable(QTableView):
             self._frozen_row_view.raise_()
         except Exception:
             pass
+
         self._resize_frozen_row_view()
         self._update_unpin_row_button()
 
         try:
-            self._sync_frozen_horizontal_range(self.horizontalScrollBar().minimum(), self.horizontalScrollBar().maximum())
+            self._sync_frozen_horizontal_range(
+                self.horizontalScrollBar().minimum(),
+                self.horizontalScrollBar().maximum(),
+            )
             self._sync_frozen_horizontal_value(self.horizontalScrollBar().value())
         except Exception:
             pass
 
-        # Force update of the frozen row view
         try:
             self._frozen_row_view.update()
             self._frozen_row_view.viewport().update()
@@ -524,7 +611,7 @@ class TwoDATable(QTableView):
             self._update_frozen_rows()
 
     def _on_main_current_changed(self, current, previous):
-        if not current.isValid() or not getattr(self, '_frozen_proxy', None):
+        if not current.isValid() or not getattr(self, "_frozen_proxy", None):
             return
         src_col = current.column()
         try:
@@ -537,14 +624,20 @@ class TwoDATable(QTableView):
     def _resize_frozen_view(self):
         if not self._frozen_view or not self.model() or self._frozen_column is None:
             return
-        width = self._frozen_col_sizes.get(self._frozen_column, self.columnWidth(self._frozen_column))
+
+        width = self._frozen_col_sizes.get(
+            self._frozen_column, self.columnWidth(self._frozen_column)
+        )
+
         vp = self.viewport().geometry()
-        header_height = self.horizontalHeader().height()
         x = vp.x()
-        y = vp.y() - header_height
-        h = header_height + vp.height()
+        y = vp.y()
+        h = vp.height()
+
         self._frozen_view.setGeometry(QRect(x, y, width, h))
-        for r in range(self.model().rowCount()):
+
+        rows = self.model().rowCount()
+        for r in range(rows):
             self._frozen_view.setRowHeight(r, self.rowHeight(r))
 
     def _update_unpin_column_button(self):
@@ -560,14 +653,19 @@ class TwoDATable(QTableView):
     def _resize_frozen_row_view(self):
         if not self._frozen_row_view or not self.model() or self._frozen_row is None:
             return
-        row_height = self._frozen_row_sizes.get(self._frozen_row, self.rowHeight(self._frozen_row))
+
+        row_height = self._frozen_row_sizes.get(
+            self._frozen_row, self.rowHeight(self._frozen_row)
+        )
         header_height = self._frozen_row_view.horizontalHeader().height()
         vp = self.viewport().geometry()
         x = vp.x()
         y = vp.y()
         w = vp.width()
         h = header_height + row_height
+
         self._frozen_row_view.setGeometry(QRect(x, y, w, h))
+
         cols = self.model().columnCount()
         for c in range(cols):
             try:
@@ -577,13 +675,19 @@ class TwoDATable(QTableView):
             except Exception:
                 pass
         try:
-            self._frozen_row_view.horizontalScrollBar().setValue(self.horizontalScrollBar().value())
+            self._frozen_row_view.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value()
+            )
         except Exception:
             pass
 
     def _update_unpin_row_button(self):
-        if not hasattr(self, '_unpin_row_btn') or self._frozen_row is None or not self._frozen_row_view.isVisible():
-            if hasattr(self, '_unpin_row_btn') and self._unpin_row_btn:
+        if (
+            not hasattr(self, "_unpin_row_btn")
+            or self._frozen_row is None
+            or not self._frozen_row_view.isVisible()
+        ):
+            if hasattr(self, "_unpin_row_btn") and self._unpin_row_btn:
                 self._unpin_row_btn.hide()
             return
         self._unpin_row_btn.show()
@@ -596,14 +700,18 @@ class TwoDATable(QTableView):
         super().resizeEvent(event)
         self._resize_frozen_view()
         self._resize_frozen_row_view()
-        if hasattr(self, '_unpin_column_btn'):
+        if hasattr(self, "_unpin_column_btn"):
             self._update_unpin_column_button()
-        if hasattr(self, '_unpin_row_btn'):
+        if hasattr(self, "_unpin_row_btn"):
             self._update_unpin_row_button()
 
     def scrollTo(self, index, hint=QAbstractItemView.EnsureVisible):
         super().scrollTo(index, hint)
-        if index.isValid() and index.column() == self._frozen_column and self._frozen_view:
+        if (
+            index.isValid()
+            and index.column() == self._frozen_column
+            and self._frozen_view
+        ):
             try:
                 if self._frozen_proxy:
                     idx = self._frozen_proxy.index(index.row(), 0)
@@ -619,14 +727,17 @@ class TwoDATable(QTableView):
             return
         self.setCurrentIndex(idx)
         menu = QMenu(self)
+
         act_insert_above = QAction("Insert Row Above", self)
         act_insert_below = QAction("Insert Row Below", self)
         act_duplicate = QAction("Duplicate Row", self)
         act_delete = QAction("Delete Row", self)
+
         act_insert_above.triggered.connect(self.requestInsertAbove.emit)
         act_insert_below.triggered.connect(self.requestInsertBelow.emit)
         act_duplicate.triggered.connect(self.requestDuplicate.emit)
         act_delete.triggered.connect(self.requestDelete.emit)
+
         menu.addAction(act_insert_above)
         menu.addAction(act_insert_below)
         menu.addAction(act_duplicate)
@@ -635,7 +746,7 @@ class TwoDATable(QTableView):
         menu.exec_(self.viewport().mapToGlobal(pos))
 
     def _on_main_row_current_changed(self, current, previous):
-        if not current.isValid() or not getattr(self, '_frozen_row_proxy', None):
+        if not current.isValid() or not getattr(self, "_frozen_row_proxy", None):
             return
         src_row = current.row()
         try:
@@ -655,18 +766,17 @@ class TwoDATable(QTableView):
                 step = 0
             sb.setValue(sb.value() + step)
             return True
+
         if self._frozen_row_view and obj is self._frozen_row_view.viewport() and event.type() == QEvent.Wheel:
             sb = self.verticalScrollBar()
             try:
                 dy = event.angleDelta().y()
-                if dy != 0:
-                    step = -int(dy / 120) * sb.singleStep()
-                else:
-                    step = 0
+                step = -int(dy / 120) * sb.singleStep() if dy != 0 else 0
             except Exception:
                 step = 0
             sb.setValue(sb.value() + step)
             return True
+
         return super().eventFilter(obj, event)
 
     def mousePressEvent(self, event):
@@ -676,30 +786,26 @@ class TwoDATable(QTableView):
             self._pan_last_pos = event.pos()
             self._pan_dx = 0.0
             self._pan_dy = 0.0
-            self._pan_active = False  # NEW
+            self._pan_active = False
             self.setCursor(Qt.OpenHandCursor)
             self._pan_timer.start()
             event.accept()
             return
-
         super().mousePressEvent(event)
-
-
-
 
     def mouseMoveEvent(self, event):
         if self._panning and self._pan_last_pos is not None:
             delta = event.pos() - self._pan_last_pos
             self._pan_last_pos = event.pos()
 
-            # Check if drag is intentional
             if not self._pan_active:
                 total_delta = event.pos() - self._pan_origin_pos
-                if abs(total_delta.x()) < PAN_START_THRESHOLD and abs(total_delta.y()) < PAN_START_THRESHOLD:
+                if (
+                    abs(total_delta.x()) < PAN_START_THRESHOLD
+                    and abs(total_delta.y()) < PAN_START_THRESHOLD
+                ):
                     event.accept()
                     return
-
-                # Threshold crossed ? activate panning
                 self._pan_active = True
                 self.setCursor(Qt.ClosedHandCursor)
 
@@ -710,9 +816,6 @@ class TwoDATable(QTableView):
             return
 
         super().mouseMoveEvent(event)
-
-
-
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MiddleButton and self._panning:
@@ -729,12 +832,9 @@ class TwoDATable(QTableView):
 
         super().mouseReleaseEvent(event)
 
-
-
     def _apply_pan(self):
         if not self._panning:
             return
-
         if not (self._pan_dx or self._pan_dy):
             return
 
@@ -745,7 +845,6 @@ class TwoDATable(QTableView):
         vw = max(1, viewport.width())
         vh = max(1, viewport.height())
 
-        # --- Dead-zone filtering (ignore mouse noise) ---
         DEAD_ZONE = 2.0
         if abs(self._pan_dx) < DEAD_ZONE:
             self._pan_dx = 0.0
@@ -755,16 +854,11 @@ class TwoDATable(QTableView):
         if not (self._pan_dx or self._pan_dy):
             return
 
-        # --- Convert mouse deltas to scroll deltas ---
         dx = self._pan_dx * (hbar.pageStep() / vw)
         dy = self._pan_dy * (vbar.pageStep() / vh)
 
-        # --- Quantize to stable steps ---
-        # Vertical: snap to whole rows
         row_h = self.rowHeight(0) if self.model().rowCount() else 1
         min_v_step = max(1, row_h // 2)
-
-        # Horizontal: snap to small column chunks
         min_h_step = max(4, hbar.pageStep() // 20)
 
         ix = int(dx / min_h_step) * min_h_step
@@ -774,10 +868,7 @@ class TwoDATable(QTableView):
             hbar.setValue(hbar.value() - ix)
             vbar.setValue(vbar.value() - iy)
 
-            # Consume only what we applied
             if ix:
                 self._pan_dx = 0.0
             if iy:
                 self._pan_dy = 0.0
-
-
