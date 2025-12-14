@@ -170,3 +170,29 @@ class TwoDADocument(QWidget):
         mw = self.window()
         if mw and hasattr(mw, "update_tab_title"):
             mw.update_tab_title(self)
+
+    def replace_all(self, regex, replacement):
+        self.model.beginResetModel()
+        ...
+        self.model.endResetModel()
+        self._mark_dirty()
+
+
+    def set_search_pattern(self, regex):
+        self._search_regex = regex
+        self._search_last_row = -1
+        self._search_last_col = -1
+
+    def replace_current(self, replacement):
+        r, c = self._search_last_row, self._search_last_col
+        if r < 0 or c < 0:
+            return
+
+        cell = self.model._rows[r][c]
+        match = self._search_regex.search(cell)
+        if not match:
+            return
+
+        new = cell[:match.start()] + replacement + cell[match.end():]
+        self.model.set_cell(r, c, new)
+        self._mark_dirty()
