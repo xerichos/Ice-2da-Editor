@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import (
     QScroller,
     QFrame,
 )
-from PyQt5.QtGui import QColor
 from PyQt5.QtCore import (
     Qt,
     pyqtSignal,
@@ -27,8 +26,6 @@ class TwoDATable(QTableView):
     requestInsertBelow = pyqtSignal()
     requestDuplicate = pyqtSignal()
     requestDelete = pyqtSignal()
-
-    DEFAULT_BG = QColor("#2b2b2b")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,8 +83,6 @@ class TwoDATable(QTableView):
         self._frozen_view.setEditTriggers(self.editTriggers())
         self._frozen_view.hide()
         self._frozen_view.setObjectName("FrozenColumnView")
-
-
 
         # Keep scroll modes identical across views
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
