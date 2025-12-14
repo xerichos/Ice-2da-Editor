@@ -266,14 +266,15 @@ class MainWindow(QMainWindow):
         pattern = r"\b" + escaped + r"\b" if whole else escaped
         regex = re.compile(pattern, flags)
 
-        # 1. Install regex + reset state
         doc.set_search_pattern(regex)
 
-        # 2. Either replace-all OR navigate ? not both
         if rep:
-            doc.replace_all(regex, rep)
+            if doc._search_last_row == -1:
+                doc.find_next()
+            doc.replace_current(rep)
         else:
             doc.find_next()
+
 
 
 

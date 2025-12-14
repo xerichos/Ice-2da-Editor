@@ -90,16 +90,18 @@ class TwoDADocument(QWidget):
         rows = self.model._rows
         header = self.model._header
 
-        # Start from current position or beginning
-        start_row = self._search_last_row
-        start_col = self._search_last_col + 1
+        if self._search_last_row < 0 or self._search_last_col < 0:
+            start_row = 0
+            start_col = 0
+        else:
+            start_row = self._search_last_row
+            start_col = self._search_last_col + 1
 
-        # Search from current position onwards
         for r in range(start_row, len(rows)):
             row = rows[r]
             col_start = start_col if r == start_row else 0
 
-            for c in range(col_start, len(row)):
+            for c in range(max(1, col_start), len(row)):
                 cell_value = row[c]
                 if isinstance(cell_value, str) and self._search_regex.search(cell_value):
                     # Found match - select it
@@ -131,11 +133,13 @@ class TwoDADocument(QWidget):
 
         rows = self.model._rows
 
-        # Start from current position or end
-        start_row = self._search_last_row
-        start_col = self._search_last_col - 1
+        if self._search_last_row < 0 or self._search_last_col < 0:
+            start_row = len(rows) - 1
+            start_col = len(rows[start_row]) - 1 if rows else -1
+        else:
+            start_row = self._search_last_row
+            start_col = self._search_last_col - 1
 
-        # Search backwards from current position
         for r in range(start_row, -1, -1):
             row = rows[r]
             col_start = start_col if r == start_row else len(row) - 1
