@@ -267,6 +267,8 @@ class MainWindow(QMainWindow):
         regex = re.compile(pattern, flags)
 
         doc.set_search(regex, rep)
+        # Store regex for find next/previous
+        doc._search_regex = regex
 
     # ==============================================================
     # Utilities
