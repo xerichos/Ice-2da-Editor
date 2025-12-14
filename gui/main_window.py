@@ -3,7 +3,6 @@ import re
 
 from PyQt5.QtWidgets import (
     QMainWindow,
-    QFileDialog,
     QAction,
     QTabWidget,
     QMessageBox,
@@ -13,16 +12,16 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtGui import QIcon
 from gui.document import TwoDADocument
-from gui.cell_edit_command import CellEditCommand
-from data.twoda import load_2da, save_2da
 from gui.dialogs import SearchReplaceDialog
 from gui.error_handler import show_error
+from gui.file_manager import FileManager
+from gui.recent_files import RecentFilesManager
 from gui.styles import (
     LIGHT_STYLE, DARK_STYLE, MIDNIGHT_STYLE,
     TABLE_LIGHT_STYLE, TABLE_DARK_STYLE, TABLE_MIDNIGHT_STYLE
 )
-
-MAX_RECENT_FILES = 10
+from data.twoda import load_2da
+from gui.cell_edit_command import CellEditCommand
 
 
 class MainWindow(QMainWindow):
@@ -58,6 +57,12 @@ class MainWindow(QMainWindow):
         }
 
         # ------------------------------------------------------------
+        # Managers
+        # ------------------------------------------------------------
+        self.file_manager = FileManager(self)
+        self.recent_files_manager = RecentFilesManager(self)
+        
+        # ------------------------------------------------------------
         # Actions / menus
         # ------------------------------------------------------------
         self.create_actions()
@@ -79,15 +84,15 @@ class MainWindow(QMainWindow):
     def create_actions(self):
         self.act_open = QAction("Open", self)
         self.act_open.setShortcut("Ctrl+O")
-        self.act_open.triggered.connect(self.open_file)
+        self.act_open.triggered.connect(self.file_manager.open_file)
 
         self.act_save = QAction("Save", self)
         self.act_save.setShortcut("Ctrl+S")
-        self.act_save.triggered.connect(self.save_file)
+        self.act_save.triggered.connect(self.file_manager.save_file)
 
         self.act_save_as = QAction("Save As", self)
         self.act_save_as.setShortcut("Ctrl+Alt+S")
-        self.act_save_as.triggered.connect(self.save_file_as)
+        self.act_save_as.triggered.connect(self.file_manager.save_file_as)
 
         self.act_exit = QAction("Exit", self)
         self.act_exit.triggered.connect(self.close)
@@ -116,7 +121,7 @@ class MainWindow(QMainWindow):
 
         self.act_save_all = QAction("Save All", self)
         self.act_save_all.setShortcut("Ctrl+Shift+S")
-        self.act_save_all.triggered.connect(self.save_all)
+        self.act_save_all.triggered.connect(self.file_manager.save_all)
 
         self.act_next_tab = QAction(self)
         self.act_next_tab.setShortcut("Ctrl+Tab")
@@ -143,8 +148,8 @@ class MainWindow(QMainWindow):
 
         file_menu = mb.addMenu("File")
         file_menu.addAction(self.act_open)
-        self.recent_menu = file_menu.addMenu("Recent Files")
-        self.update_recent_menu()
+        self.recent_files_manager.recent_menu = file_menu.addMenu("Recent Files")
+        self.recent_files_manager.update_recent_menu()
 
         file_menu.addAction(self.act_save)
         file_menu.addAction(self.act_save_as)
@@ -204,81 +209,6 @@ class MainWindow(QMainWindow):
         self.act_style_dark.setChecked(style_name == "dark")
         self.act_style_midnight.setChecked(style_name == "midnight")
 
-    # ==============================================================
-    # File handling
-    # ==============================================================
-    def _create_document_from_path(self, path, add_to_recent=False, set_current=True):
-        """Helper method to create and setup a document from a file path."""
-        try:
-            data = load_2da(path)
-            doc = TwoDADocument()
-            doc.current_path = path
-            doc.current_data = data
-
-            header = [""] + data.header_fields
-            rows = data.row_fields
-            doc.model.set_data(header, rows)
-
-            doc.model.cellEdited.connect(
-                lambda r, c, o, n, d=doc:
-                    d.undo_stack.push(CellEditCommand(d, r, c, o, n))
-            )
-
-            index = self.tabs.addTab(doc, os.path.basename(path))
-            if set_current:
-                self.tabs.setCurrentIndex(index)
-
-            self.update_tab_title(doc)
-            if add_to_recent:
-                self.add_recent_file(path)
-            doc._last_mtime = os.path.getmtime(path)
-            return doc
-        except Exception as e:
-            show_error("Failed to load 2DA file.", e)
-            return None
-
-    def open_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open 2DA", "", "2DA Files (*.2da)")
-        if not path:
-            return
-        self._create_document_from_path(path, add_to_recent=True, set_current=True)
-
-    def save_file(self):
-        doc = self.current_doc()
-        if not doc:
-            return
-
-        if self.check_external_modification(doc):
-            return
-
-        if not doc.current_path:
-            return self.save_file_as()
-
-        try:
-            header, rows = doc.model.extract_data()
-            doc.current_data.header_fields = header[1:]
-            doc.current_data.row_fields = rows
-
-            save_2da(doc.current_path, doc.current_data)
-            doc.is_dirty = False
-            self.update_tab_title(doc)
-            doc._last_mtime = os.path.getmtime(doc.current_path)
-
-
-        except Exception as e:
-            show_error("Failed to save 2DA file.", e)
-
-    def save_file_as(self):
-        doc = self.current_doc()
-        if not doc:
-            return
-
-        path, _ = QFileDialog.getSaveFileName(self, "Save 2DA", "", "2DA Files (*.2da)")
-        if not path:
-            return
-
-        doc.current_path = path
-        self.save_file()
 
     # ==============================================================
     # Tabs
@@ -388,10 +318,10 @@ class MainWindow(QMainWindow):
             self.close_all_tabs()
 
         elif action == act_save:
-            self.save_file()
+            self.file_manager.save_file()
 
         elif action == act_save_as:
-            self.save_file_as()
+            self.file_manager.save_file_as()
 
         elif action == act_reveal:
             if doc.current_path:
@@ -419,12 +349,6 @@ class MainWindow(QMainWindow):
                     return True
         return super().eventFilter(obj, event)
 
-    def save_all(self):
-        for i in range(self.tabs.count()):
-            doc = self.tabs.widget(i)
-            if isinstance(doc, TwoDADocument) and doc.is_dirty:
-                self.tabs.setCurrentIndex(i)
-                self.save_file()
 
     def closeEvent(self, event):
         dirty_docs = [
@@ -461,7 +385,9 @@ class MainWindow(QMainWindow):
 
         for path in paths:
             if isinstance(path, str) and os.path.exists(path):
-                self._create_document_from_path(path, add_to_recent=False, set_current=False)
+                self.file_manager.create_document_from_path(
+                    path, add_to_recent=False, set_current=False
+                )
 
     def next_tab(self):
         count = self.tabs.count()
@@ -474,95 +400,11 @@ class MainWindow(QMainWindow):
         if count < 2:
             return
         self.tabs.setCurrentIndex((self.tabs.currentIndex() - 1) % count)
-    def add_recent_file(self, path):
-        files = self.settings.value("recent/files", [])
-        if path in files:
-            files.remove(path)
-        files.insert(0, path)
-        files = files[:MAX_RECENT_FILES]
-        self.settings.setValue("recent/files", files)
-        self.update_recent_menu()
-
-    def update_recent_menu(self):
-        self.recent_menu.clear()
-
-        files = self.settings.value("recent/files", [])
-        # Normalize + prune missing
-        cleaned = []
-        for p in files:
-            if isinstance(p, str) and os.path.exists(p):
-                cleaned.append(p)
-
-        # Persist cleaned list if changed
-        if cleaned != files:
-            self.settings.setValue("recent/files", cleaned)
-
-        for path in cleaned:
-            act = QAction(path, self)
-            act.triggered.connect(lambda _, p=path: self.open_recent_file(p))
-            self.recent_menu.addAction(act)
-
-        if not cleaned:
-            empty = QAction("(No recent files)", self)
-            empty.setEnabled(False)
-            self.recent_menu.addAction(empty)
-    def open_recent_file(self, path):
-        if not os.path.exists(path):
-            return
-        doc = self._create_document_from_path(path, add_to_recent=False, set_current=False)
-        if doc:
-            self.tabs.setCurrentWidget(doc)
-
-
-    def check_external_modification(self, doc):
-        # Reentrancy guard: QMessageBox triggers activation changes
-        if getattr(self, "_checking_external_change", False):
-            return False
-
-        if not doc or not doc.current_path or not os.path.exists(doc.current_path):
-            return False
-
-        try:
-            current_mtime = os.path.getmtime(doc.current_path)
-        except OSError:
-            return False
-
-        last_mtime = getattr(doc, "_last_mtime", None)
-        if last_mtime is None or current_mtime == last_mtime:
-            return False
-
-        # Suppress re-entry while the dialog is open
-        self._checking_external_change = True
-        try:
-            res = QMessageBox.question(
-                self,
-                "File Modified",
-                "This file was modified outside the editor.\n\nReload from disk?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-        finally:
-            self._checking_external_change = False
-
-        if res == QMessageBox.Yes:
-            try:
-                data = load_2da(doc.current_path)
-                doc.current_data = data
-                header = [""] + data.header_fields
-                rows = data.row_fields
-                doc.model.set_data(header, rows)
-                doc.is_dirty = False
-                self.update_tab_title(doc)
-            except Exception as e:
-                show_error("Failed to reload file.", e)
-
-        # IMPORTANT: acknowledge the external change in all cases
-        doc._last_mtime = current_mtime
-        return True
     def changeEvent(self, event):
         if event.type() == event.ActivationChange and self.isActiveWindow():
             doc = self.current_doc()
             if doc:
-                self.check_external_modification(doc)
+                self.file_manager.check_external_modification(doc)
         super().changeEvent(event)
 
 
