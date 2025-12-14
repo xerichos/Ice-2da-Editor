@@ -111,6 +111,12 @@ def save_2da(path: str, data: TwoDAData):
         f.write((header_line + linesep).encode('utf-8'))
 
         # Rows: allow dynamic expansion with proper spacing
-        for fmt, fields in zip(data.row_formats, data.row_fields):
+        for i, fields in enumerate(data.row_fields):
+            if i < len(data.row_formats):
+                fmt = data.row_formats[i]
+            else:
+                # Reuse last known format or derive from header
+                fmt = data.row_formats[-1]
+
             line = rebuild_line_dynamic(fmt, fields, data_widths, preserve_spacing=False)
             f.write((line + linesep).encode('utf-8'))

@@ -96,7 +96,7 @@ class TwoDATableModel(QAbstractTableModel):
         row = max(0, min(row, len(self._rows)))
         self.beginInsertRows(QModelIndex(), row, row + count - 1)
         for _ in range(count):
-            self._rows.insert(row, [""] * len(self._header))
+            self._rows.insert(row, self.make_empty_row())   
         self.endInsertRows()
         return True
 
@@ -119,3 +119,34 @@ class TwoDATableModel(QAbstractTableModel):
         self._rows.insert(insert_at, list(self._rows[row]))
         self.endInsertRows()
         return True
+
+    def make_empty_row(self):
+        return [""] * len(self._header)
+
+    def insert_row_data(self, row, rows_data):
+        if not rows_data:
+            return False
+
+        row = max(0, min(row, len(self._rows)))
+        count = len(rows_data)
+
+        self.beginInsertRows(QModelIndex(), row, row + count - 1)
+        for i, data in enumerate(rows_data):
+            r = list(data)
+            while len(r) < len(self._header):
+                r.append("")
+            self._rows.insert(row + i, r)
+        self.endInsertRows()
+        return True
+
+    def take_rows(self, row, count):
+        if count <= 0 or row < 0 or row >= len(self._rows):
+            return []
+
+        last = min(len(self._rows), row + count)
+        self.beginRemoveRows(QModelIndex(), row, last - 1)
+        removed = self._rows[row:last]
+        del self._rows[row:last]
+        self.endRemoveRows()
+        return [list(r) for r in removed]
+
