@@ -62,6 +62,12 @@ class TwoDATable(QTableView, FrozenViewMixin):
         # Initialize frozen views
         self._init_frozen_views()
 
+        self.setEditTriggers(
+            QAbstractItemView.EditKeyPressed |
+            QAbstractItemView.DoubleClicked |
+            QAbstractItemView.SelectedClicked
+        )
+
     def currentRow(self):
         idx = self.currentIndex()
         return idx.row() if idx.isValid() else -1
@@ -285,3 +291,12 @@ class TwoDATable(QTableView, FrozenViewMixin):
                 self._pan_dx = 0.0
             if iy:
                 self._pan_dy = 0.0
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            idx = self.currentIndex()
+            if idx.isValid():
+                self.edit(idx)
+                event.accept()
+                return
+        super().keyPressEvent(event)
