@@ -1,8 +1,20 @@
 import sys
 import traceback
+
+# --- Hide console window (Windows only) -------------------------------
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(
+            ctypes.windll.kernel32.GetConsoleWindow(), 0
+        )
+    except Exception:
+        pass
+# ---------------------------------------------------------------------
+
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
-# --- Global Exception Handler ----------------------------------------------
+# --- Global Exception Handler ------------------------------------------
 
 def global_exception_hook(exc_type, exc_value, exc_traceback):
     tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
@@ -17,7 +29,7 @@ def global_exception_hook(exc_type, exc_value, exc_traceback):
         dlg.setDetailedText(tb)
         dlg.exec_()
     else:
-        # QApplication not created yet — fallback to stderr
+        # QApplication not created yet ? fallback to stderr
         print("Unhandled exception before QApplication was created:", file=sys.stderr)
         print(tb, file=sys.stderr)
 
@@ -25,7 +37,7 @@ def global_exception_hook(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = global_exception_hook
 
-# --- Application Start -----------------------------------------------------
+# --- Application Start -------------------------------------------------
 
 from gui.main_window import MainWindow
 
