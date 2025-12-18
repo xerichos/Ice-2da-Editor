@@ -79,6 +79,21 @@ class TwoDATableModel(QAbstractTableModel):
             return ""
         return str(section)
 
+    def setHeaderData(self, section, orientation, value, role=Qt.EditRole):
+        if role != Qt.EditRole or orientation != Qt.Horizontal:
+            return False
+        if not (0 <= section < len(self._header)):
+            return False
+
+        old_name = self._header[section]
+        new_name = str(value).strip()
+        if old_name == new_name:
+            return True
+
+        self._header[section] = new_name
+        self.headerDataChanged.emit(orientation, section, section)
+        return True
+
     def set_cell(self, row, col, text, *, emit_edit_signal=True):
         if not (0 <= row < len(self._rows)) or not (0 <= col < len(self._header)):
             return

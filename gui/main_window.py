@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self.tabs.customContextMenuRequested.connect(self.open_tab_context_menu)
         self.tabs.tabBar().installEventFilter(self)
         self.tabs.setMovable(True)
+
         # ------------------------------------------------------------
         # Style management
         # ------------------------------------------------------------
@@ -70,6 +71,29 @@ class MainWindow(QMainWindow):
         self.create_toolbar()
         self.set_style(self.current_style)
         self.restore_session()
+
+    def show_about(self):
+        """Show the about dialog."""
+        from PyQt5.QtWidgets import QMessageBox
+
+        about_text = """<h2>Icy 2DA Editor</h2>
+        <p>A powerful editor for Neverwinter Nights 2DA files.</p>
+
+        <p><b>Features:</b></p>
+        <ul>
+        <li>Edit 2DA files with ease</li>
+        <li>Advanced row and column operations</li>
+        <li>Freeze columns and rows for better navigation</li>
+        <li>Search and replace functionality</li>
+        <li>Multiple theme support</li>
+        <li>Undo/redo support</li>
+        </ul>
+
+        <p><b>Version:</b> 1.0</p>
+        <p><b>Built with:</b> PyQt5</p>
+        """
+
+        QMessageBox.about(self, "About Icy 2DA Editor", about_text)
 
     # ==============================================================
     # Helpers
@@ -171,6 +195,11 @@ class MainWindow(QMainWindow):
         theme_menu.addAction(self.act_style_light)
         theme_menu.addAction(self.act_style_dark)
         theme_menu.addAction(self.act_style_midnight)
+
+        help_menu = mb.addMenu("Help")
+        act_about = QAction("About", self)
+        act_about.triggered.connect(self.show_about)
+        help_menu.addAction(act_about)
 
         self.act_close_tab = QAction("Close Tab", self)
         self.act_close_tab.setShortcut("Ctrl+W")

@@ -324,6 +324,9 @@ class FrozenViewMixin:
             self._frozen_row_view.hide()
             if hasattr(self, "_unpin_row_btn") and self._unpin_row_btn:
                 self._unpin_row_btn.hide()
+            # Force visual refresh
+            self.update()
+            self.viewport().update()
             return
         
         header = self.verticalHeader()
@@ -451,6 +454,7 @@ class FrozenViewMixin:
         except Exception:
             pass
         self._frozen_row_view.viewport().update()
+        self._frozen_row_view.update()
     
     def _on_section_resized(self, logicalIndex, oldSize, newSize):
         """Handle column resize events."""
@@ -474,13 +478,39 @@ class FrozenViewMixin:
                 pass
     
     def _on_header_clicked(self, logicalIndex):
-        """Handle header click to toggle frozen column."""
+        """Handle header click - no action."""
+        pass
+
+    def rename_column(self, logicalIndex):
+        """Rename a column by showing an input dialog."""
+        from PyQt5.QtWidgets import QInputDialog
+
+        if not self.model():
+            return
+
+        current_name = self.model().headerData(logicalIndex, Qt.Horizontal, Qt.DisplayRole) or ""
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Column",
+            f"Enter new name for column {logicalIndex + 1}:",
+            text=current_name
+        )
+
+        if ok and new_name.strip():
+            # Update the header data
+            success = self.model().setHeaderData(logicalIndex, Qt.Horizontal, new_name.strip(), Qt.EditRole)
+            if success:
+                # Mark document as dirty
+                if hasattr(self, 'parent') and hasattr(self.parent(), '_mark_dirty'):
+                    self.parent()._mark_dirty()
+
+    def toggle_freeze_column(self, logicalIndex):
+        """Toggle frozen state of a column (for context menu)."""
         self.freeze_toggle_column(logicalIndex)
-    
+
     def _on_frozen_header_clicked(self, logicalIndex):
         """Handle frozen header click (no-op)."""
         pass
-    
+
     def _unpin_column(self):
         """Unpin the frozen column."""
         if self._frozen_column is not None:
@@ -503,6 +533,7 @@ class FrozenViewMixin:
         """Unpin the frozen row."""
         if self._frozen_row is not None:
             self._frozen_row = None
+            self._update_frozen_rows()
 
     def _on_frozen_column_insert(self, column, count):
         """Handle column insertions by adjusting frozen column index."""
@@ -630,7 +661,12 @@ class FrozenViewMixin:
             return
         self._unpin_row_btn.show()
         self._unpin_row_btn.raise_()
+        # Ensure button is above the frozen row view
+        self._frozen_row_view.raise_()
         btn_x = max(2, self._frozen_row_view.width() - 32)
         btn_y = 2
         self._unpin_row_btn.move(btn_x, btn_y)
+        # Make sure button is visible and enabled
+        self._unpin_row_btn.setEnabled(True)
+        self._unpin_row_btn.update()
 

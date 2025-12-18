@@ -234,6 +234,16 @@ class TwoDATable(QTableView, FrozenViewMixin):
 
         menu = QMenu(self)
 
+        # Rename option
+        act_rename = QAction("Rename Column", self)
+        act_rename.triggered.connect(lambda: self.rename_column(col))
+
+        # Freeze/Unfreeze option
+        is_frozen = getattr(self, '_frozen_column', None) == col
+        freeze_text = "Unfreeze Column" if is_frozen else "Freeze Column"
+        act_freeze = QAction(freeze_text, self)
+        act_freeze.triggered.connect(lambda: self.toggle_freeze_column(col))
+
         act_insert_left = QAction("Insert Column Left", self)
         act_insert_right = QAction("Insert Column Right", self)
         act_duplicate = QAction("Duplicate Column", self)
@@ -244,6 +254,9 @@ class TwoDATable(QTableView, FrozenViewMixin):
         act_duplicate.triggered.connect(self.requestDuplicateColumn.emit)
         act_delete.triggered.connect(self.requestDeleteColumn.emit)
 
+        menu.addAction(act_rename)
+        menu.addAction(act_freeze)
+        menu.addSeparator()
         menu.addAction(act_insert_left)
         menu.addAction(act_insert_right)
         menu.addAction(act_duplicate)
