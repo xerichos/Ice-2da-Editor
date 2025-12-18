@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QScroller,
     QFrame,
+    QApplication,
 )
 from PyQt5.QtCore import (
     Qt,
@@ -14,6 +15,7 @@ from PyQt5.QtCore import (
     QEvent,
     QTimer,
 )
+from PyQt5.QtGui import QKeySequence, QClipboard
 from .frozen_view import FrozenViewMixin
 
 PAN_START_THRESHOLD = 8  # pixels
@@ -56,6 +58,10 @@ class TwoDATable(QTableView, FrozenViewMixin):
 
         self.setAlternatingRowColors(False)
         self.setSortingEnabled(False)
+
+        # Enable extended selection for multi-row/cell selection
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectItems)
 
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_context_menu)
@@ -362,6 +368,89 @@ class TwoDATable(QTableView, FrozenViewMixin):
             if iy:
                 self._pan_dy = 0.0
 
+    def copy_selection(self):
+        """Copy all selected cells to clipboard in tab-separated format."""
+        if not self.model():
+            return
+
+        selected_indexes = self.selectionModel().selectedIndexes()
+        if not selected_indexes:
+            return
+
+        # Group selected cells by row
+        rows_data = {}
+        min_col = float('inf')
+        max_col = 0
+
+        for index in selected_indexes:
+            row = index.row()
+            col = index.column()
+            if row not in rows_data:
+                rows_data[row] = {}
+            rows_data[row][col] = self.model().data(index, Qt.DisplayRole) or ""
+            min_col = min(min_col, col)
+            max_col = max(max_col, col)
+
+        if not rows_data:
+            return
+
+        # Convert to tab-separated format
+        lines = []
+        for row in sorted(rows_data.keys()):
+            row_data = rows_data[row]
+            # Fill in missing columns with empty strings
+            row_values = []
+            for col in range(min_col, max_col + 1):
+                row_values.append(row_data.get(col, ""))
+            lines.append("\t".join(row_values))
+
+        clipboard_text = "\n".join(lines)
+        QApplication.clipboard().setText(clipboard_text)
+
+    def paste_selection(self):
+        """Paste clipboard content starting from current cell."""
+        if not self.model():
+            return
+
+        clipboard_text = QApplication.clipboard().text()
+        if not clipboard_text:
+            return
+
+        current_index = self.currentIndex()
+        if not current_index.isValid():
+            return
+
+        start_row = current_index.row()
+        start_col = current_index.column()
+
+        # Parse clipboard content (tab-separated rows)
+        rows_data = []
+        for line in clipboard_text.split('\n'):
+            if line.strip():  # Skip empty lines
+                row_data = line.split('\t')
+                rows_data.append(row_data)
+
+        if not rows_data:
+            return
+
+        # Paste data starting from current position
+        for row_offset, row_data in enumerate(rows_data):
+            target_row = start_row + row_offset
+            if target_row >= self.model().rowCount():
+                # Add rows if needed
+                rows_to_add = target_row - self.model().rowCount() + 1
+                self.model().insertRows(self.model().rowCount(), rows_to_add)
+
+            for col_offset, cell_value in enumerate(row_data):
+                target_col = start_col + col_offset
+                if target_col < self.model().columnCount():
+                    index = self.model().index(target_row, target_col)
+                    self.model().setData(index, cell_value, Qt.EditRole)
+
+        # Mark document as dirty if we have a parent document
+        if hasattr(self.parent(), '_mark_dirty'):
+            self.parent()._mark_dirty()
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             idx = self.currentIndex()
@@ -369,4 +458,12 @@ class TwoDATable(QTableView, FrozenViewMixin):
                 self.edit(idx)
                 event.accept()
                 return
+        elif event.matches(QKeySequence.Copy):
+            self.copy_selection()
+            event.accept()
+            return
+        elif event.matches(QKeySequence.Paste):
+            self.paste_selection()
+            event.accept()
+            return
         super().keyPressEvent(event)
