@@ -81,6 +81,7 @@ class FileManager:
 
             save_2da(doc.current_path, doc.current_data)
             doc.is_dirty = False
+            doc.undo_stack.setClean()  # Mark undo stack as clean
             self.main_window.update_tab_title(doc)
             doc._last_mtime = os.path.getmtime(doc.current_path)
         except Exception as e:

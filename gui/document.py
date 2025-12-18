@@ -1,6 +1,6 @@
 # gui/document.py
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QUndoStack
-from PyQt5.QtCore import QModelIndex
+from PyQt5.QtCore import QModelIndex, Qt
 from PyQt5.QtWidgets import QUndoCommand
 
 from .table_view import TwoDATable
@@ -221,6 +221,21 @@ class DuplicateColumnCommand(QUndoCommand):
         m.removeColumns(idx, 1)
 
 
+class RenameColumnCommand(QUndoCommand):
+    def __init__(self, doc, col: int, old_name: str, new_name: str, label: str = "Rename Column"):
+        super().__init__(label)
+        self.doc = doc
+        self.col = col
+        self.old_name = old_name
+        self.new_name = new_name
+
+    def redo(self):
+        self.doc.model.setHeaderData(self.col, Qt.Horizontal, self.new_name, Qt.EditRole)
+
+    def undo(self):
+        self.doc.model.setHeaderData(self.col, Qt.Horizontal, self.old_name, Qt.EditRole)
+
+
 class TwoDADocument(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -233,6 +248,9 @@ class TwoDADocument(QWidget):
         self.current_path = None
         self.current_data = None
         self.is_dirty = False
+
+        # Connect to undo stack clean state changes
+        self.undo_stack.cleanChanged.connect(self._on_clean_changed)
 
         # Search state
         self._search_regex = None
@@ -470,6 +488,13 @@ class TwoDADocument(QWidget):
     # -----------------------------
     def _mark_dirty(self):
         self.is_dirty = True
+        mw = self.window()
+        if mw and hasattr(mw, "update_tab_title"):
+            mw.update_tab_title(self)
+
+    def _on_clean_changed(self, clean):
+        """Handle undo stack clean state changes."""
+        self.is_dirty = not clean
         mw = self.window()
         if mw and hasattr(mw, "update_tab_title"):
             mw.update_tab_title(self)

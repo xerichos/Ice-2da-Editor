@@ -495,12 +495,20 @@ class FrozenViewMixin:
             text=current_name
         )
 
-        if ok and new_name.strip():
-            # Update the header data
-            success = self.model().setHeaderData(logicalIndex, Qt.Horizontal, new_name.strip(), Qt.EditRole)
-            if success:
+        if ok and new_name.strip() and new_name.strip() != current_name:
+            # Create undo command for the rename operation
+            if hasattr(self, 'parent') and hasattr(self.parent(), 'undo_stack'):
+                from gui.document import RenameColumnCommand
+                command = RenameColumnCommand(
+                    self.parent(),
+                    logicalIndex,
+                    current_name,
+                    new_name.strip(),
+                    f"Rename Column {logicalIndex + 1}"
+                )
+                self.parent().undo_stack.push(command)
                 # Mark document as dirty
-                if hasattr(self, 'parent') and hasattr(self.parent(), '_mark_dirty'):
+                if hasattr(self.parent(), '_mark_dirty'):
                     self.parent()._mark_dirty()
 
     def toggle_freeze_column(self, logicalIndex):
