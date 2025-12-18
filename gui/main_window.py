@@ -81,15 +81,12 @@ class MainWindow(QMainWindow):
 
         <p><b>Features:</b></p>
         <ul>
-        <li>Edit 2DA files with ease</li>
-        <li>Advanced row and column operations</li>
-        <li>Freeze columns and rows for better navigation</li>
-        <li>Search and replace functionality</li>
-        <li>Multiple theme support</li>
-        <li>Undo/redo support</li>
+        <li>This is a 2da editor for Neverwinter Nights. I don't promise it'll work for other Bioware games of the time but feel free to fork the code.</li>
+        <li>It should feature all the common editor utilities that you expect, also drag panning view, frozen columns (right click on headers to open the context menu), renaming headers, etc</li>
+        <li>It feels wrong to take credit for something so aggressively vibecoded, but if you want to blame somebody, this was 'built' by Iceborn of Arelith.</li>
         </ul>
 
-        <p><b>Version:</b> 1.0</p>
+        <p><b>Version:</b> 0.9</p>
         <p><b>Built with:</b> PyQt5</p>
         """
 
