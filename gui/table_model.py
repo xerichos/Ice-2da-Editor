@@ -111,6 +111,53 @@ class TwoDATableModel(QAbstractTableModel):
         self.endRemoveRows()
         return True
 
+    def insertColumns(self, column, count, parent=QModelIndex()):
+        if count <= 0:
+            return False
+        column = max(0, min(column, len(self._header)))
+        self.beginInsertColumns(QModelIndex(), column, column + count - 1)
+
+        # Insert new headers
+        for _ in range(count):
+            self._header.insert(column, "")
+
+        # Insert new columns into all rows
+        for row in self._rows:
+            for _ in range(count):
+                row.insert(column, "")
+
+        self.endInsertColumns()
+
+        # Notify any frozen view about column insertion
+        if hasattr(self, '_notify_frozen_column_insert'):
+            self._notify_frozen_column_insert(column, count)
+
+        return True
+
+    def removeColumns(self, column, count, parent=QModelIndex()):
+        if count <= 0:
+            return False
+        if column < 0 or column >= len(self._header):
+            return False
+        last = min(len(self._header) - 1, column + count - 1)
+        self.beginRemoveColumns(QModelIndex(), column, last)
+
+        # Remove headers
+        del self._header[column:last + 1]
+
+        # Remove columns from all rows
+        for row in self._rows:
+            if column < len(row):
+                del row[column:column + count]
+
+        self.endRemoveColumns()
+
+        # Notify any frozen view about column removal
+        if hasattr(self, '_notify_frozen_column_remove'):
+            self._notify_frozen_column_remove(column, count)
+
+        return True
+
     def duplicateRow(self, row):
         if row < 0 or row >= len(self._rows):
             return False

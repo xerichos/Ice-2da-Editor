@@ -98,6 +98,129 @@ class DuplicateRowCommand(QUndoCommand):
         m.removeRows(idx, 1)
 
 
+# -----------------------------
+# Undo commands for column ops
+# -----------------------------
+class InsertColumnCommand(QUndoCommand):
+    def __init__(self, doc, col: int, count: int = 1, label: str = "Insert Column"):
+        super().__init__(label)
+        self.doc = doc
+        self.col = col
+        self.count = count
+        self._did_redo = False
+
+    def redo(self):
+        # Insert empty columns via model so signals/view updates are correct
+        self.doc.model.insertColumns(self.col, self.count)
+        self._did_redo = True
+
+    def undo(self):
+        if not self._did_redo:
+            return
+        self.doc.model.removeColumns(self.col, self.count)
+
+
+class RemoveColumnCommand(QUndoCommand):
+    def __init__(self, doc, col: int, count: int = 1, label: str = "Delete Column"):
+        super().__init__(label)
+        self.doc = doc
+        self.col = col
+        self.count = count
+        self._removed_header = None  # list[str]
+        self._removed_data = None    # list[list[str]]
+
+    def redo(self):
+        # Snapshot columns before deletion so undo can restore them exactly
+        m = self.doc.model
+        if self.col < 0 or self.col >= len(m._header) or self.count <= 0:
+            self._removed_header = []
+            self._removed_data = []
+            return
+
+        last = min(len(m._header), self.col + self.count)
+        self._removed_header = m._header[self.col:last]
+
+        # Extract column data from all rows
+        self._removed_data = []
+        for row in m._rows:
+            if self.col < len(row):
+                col_data = row[self.col:min(len(row), self.col + self.count)]
+                self._removed_data.append(col_data)
+            else:
+                self._removed_data.append([])
+
+        self.doc.model.removeColumns(self.col, self.count)
+
+    def undo(self):
+        if not self._removed_header or not self._removed_data:
+            return
+
+        m = self.doc.model
+        insert_at = max(0, min(self.col, len(m._header)))
+        m.beginInsertColumns(QModelIndex(), insert_at, insert_at + len(self._removed_header) - 1)
+
+        # Insert headers
+        for i, header in enumerate(self._removed_header):
+            m._header.insert(insert_at + i, header)
+
+        # Insert column data into each row
+        for row_idx, row_data in enumerate(self._removed_data):
+            if row_idx < len(m._rows):
+                row = m._rows[row_idx]
+                for i, cell_data in enumerate(row_data):
+                    row.insert(insert_at + i, cell_data)
+
+        m.endInsertColumns()
+
+
+class DuplicateColumnCommand(QUndoCommand):
+    def __init__(self, doc, col: int, label: str = "Duplicate Column"):
+        super().__init__(label)
+        self.doc = doc
+        self.col = col
+        self._copied_header = None  # str
+        self._copied_data = None    # list[str]
+        self._insert_at = col + 1
+
+    def redo(self):
+        m = self.doc.model
+        if self.col < 0 or self.col >= len(m._header):
+            self._copied_header = None
+            self._copied_data = None
+            return
+
+        self._copied_header = m._header[self.col]
+
+        # Extract column data from all rows
+        self._copied_data = []
+        for row in m._rows:
+            if self.col < len(row):
+                self._copied_data.append(row[self.col])
+            else:
+                self._copied_data.append("")
+
+        insert_at = max(0, min(self._insert_at, len(m._header)))
+        m.beginInsertColumns(QModelIndex(), insert_at, insert_at)
+
+        # Insert header
+        m._header.insert(insert_at, self._copied_header)
+
+        # Insert column data into each row
+        for row_idx, cell_data in enumerate(self._copied_data):
+            if row_idx < len(m._rows):
+                m._rows[row_idx].insert(insert_at, cell_data)
+
+        m.endInsertColumns()
+
+    def undo(self):
+        m = self.doc.model
+        if self._copied_header is None or self._copied_data is None:
+            return
+        # Remove the column we inserted at redo-time. Clamp in case other ops happened.
+        idx = max(0, min(self._insert_at, len(m._header) - 1))
+        m.removeColumns(idx, 1)
+
+
 class TwoDADocument(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,6 +248,12 @@ class TwoDADocument(QWidget):
         self.table.requestInsertBelow.connect(self.insert_row_below)
         self.table.requestDuplicate.connect(self.duplicate_row)
         self.table.requestDelete.connect(self.delete_row)
+
+        # Connect column context menu signals (column ops must go through undo commands)
+        self.table.requestInsertColumnLeft.connect(self.insert_column_left)
+        self.table.requestInsertColumnRight.connect(self.insert_column_right)
+        self.table.requestDuplicateColumn.connect(self.duplicate_column)
+        self.table.requestDeleteColumn.connect(self.delete_column)
 
     # -----------------------------
     # Row operations (UNDO SAFE)
@@ -155,6 +284,37 @@ class TwoDADocument(QWidget):
         if row < 0:
             return
         self.undo_stack.push(RemoveRowCommand(self, row, 1))
+        self._mark_dirty()
+
+    # -----------------------------
+    # Column operations (UNDO SAFE)
+    # -----------------------------
+    def insert_column_left(self):
+        col = self.table.currentColumn()
+        if col < 0:
+            return
+        self.undo_stack.push(InsertColumnCommand(self, col, 1, "Insert Column Left"))
+        self._mark_dirty()
+
+    def insert_column_right(self):
+        col = self.table.currentColumn()
+        if col < 0:
+            return
+        self.undo_stack.push(InsertColumnCommand(self, col + 1, 1, "Insert Column Right"))
+        self._mark_dirty()
+
+    def duplicate_column(self):
+        col = self.table.currentColumn()
+        if col < 0:
+            return
+        self.undo_stack.push(DuplicateColumnCommand(self, col))
+        self._mark_dirty()
+
+    def delete_column(self):
+        col = self.table.currentColumn()
+        if col < 0:
+            return
+        self.undo_stack.push(RemoveColumnCommand(self, col, 1))
         self._mark_dirty()
 
     # -----------------------------

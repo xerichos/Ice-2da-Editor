@@ -116,9 +116,14 @@ class FrozenViewMixin:
     def _init_frozen_views(self):
         """Initialize frozen column and row views. Call this from __init__."""
         from PyQt5.QtWidgets import QFrame
-        
+
         # Frozen column setup
         self._frozen_column = None
+
+        # Connect to model for frozen column management
+        if self.model():
+            self.model()._notify_frozen_column_insert = self._on_frozen_column_insert
+            self.model()._notify_frozen_column_remove = self._on_frozen_column_remove
         self._frozen_view = QTableView(self)
         self._frozen_view.setFrameShape(QFrame.NoFrame)
         self._frozen_view.setLineWidth(0)
@@ -498,6 +503,32 @@ class FrozenViewMixin:
         """Unpin the frozen row."""
         if self._frozen_row is not None:
             self._frozen_row = None
+
+    def _on_frozen_column_insert(self, column, count):
+        """Handle column insertions by adjusting frozen column index."""
+        if self._frozen_column is None:
+            return
+
+        if column <= self._frozen_column:
+            # Columns inserted before or at frozen column - shift the index
+            self._frozen_column += count
+            self._update_frozen_columns()
+
+    def _on_frozen_column_remove(self, column, count):
+        """Handle column removals by adjusting frozen column index."""
+        if self._frozen_column is None:
+            return
+
+        removed_end = column + count - 1
+
+        if column <= self._frozen_column <= removed_end:
+            # Frozen column is being removed - unpin it
+            self._frozen_column = None
+            self._update_frozen_columns()
+        elif column <= self._frozen_column:
+            # Columns removed before frozen column - shift the index
+            self._frozen_column -= count
+            self._update_frozen_columns()
             self._update_frozen_rows()
     
     def _on_main_current_changed(self, current, previous):

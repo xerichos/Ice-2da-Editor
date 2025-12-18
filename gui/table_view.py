@@ -25,6 +25,11 @@ class TwoDATable(QTableView, FrozenViewMixin):
     requestDuplicate = pyqtSignal()
     requestDelete = pyqtSignal()
 
+    requestInsertColumnLeft = pyqtSignal()
+    requestInsertColumnRight = pyqtSignal()
+    requestDuplicateColumn = pyqtSignal()
+    requestDeleteColumn = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -55,6 +60,10 @@ class TwoDATable(QTableView, FrozenViewMixin):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_context_menu)
 
+        # Column header context menu
+        self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.horizontalHeader().customContextMenuRequested.connect(self.open_column_context_menu)
+
         # Keep scroll modes identical across views (needed for proper frozen view sync)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
@@ -72,8 +81,17 @@ class TwoDATable(QTableView, FrozenViewMixin):
         idx = self.currentIndex()
         return idx.row() if idx.isValid() else -1
 
+    def currentColumn(self):
+        idx = self.currentIndex()
+        return idx.column() if idx.isValid() else -1
+
     def setModel(self, model):
         super().setModel(model)
+
+        # Connect frozen column notifications if model supports it
+        if model and hasattr(model, '_notify_frozen_column_insert'):
+            model._notify_frozen_column_insert = self._on_frozen_column_insert
+            model._notify_frozen_column_remove = self._on_frozen_column_remove
 
         if self._frozen_view:
             try:
@@ -158,6 +176,7 @@ class TwoDATable(QTableView, FrozenViewMixin):
         self.setCurrentIndex(idx)
         menu = QMenu(self)
 
+        # Row operations
         act_insert_above = QAction("Insert Row Above", self)
         act_insert_below = QAction("Insert Row Below", self)
         act_duplicate = QAction("Duplicate Row", self)
@@ -173,7 +192,58 @@ class TwoDATable(QTableView, FrozenViewMixin):
         menu.addAction(act_duplicate)
         menu.addSeparator()
         menu.addAction(act_delete)
+
+        # Column operations
+        menu.addSeparator()
+
+        act_insert_left = QAction("Insert Column Left", self)
+        act_insert_right = QAction("Insert Column Right", self)
+        act_duplicate_col = QAction("Duplicate Column", self)
+        act_delete_col = QAction("Delete Column", self)
+
+        act_insert_left.triggered.connect(self.requestInsertColumnLeft.emit)
+        act_insert_right.triggered.connect(self.requestInsertColumnRight.emit)
+        act_duplicate_col.triggered.connect(self.requestDuplicateColumn.emit)
+        act_delete_col.triggered.connect(self.requestDeleteColumn.emit)
+
+        menu.addAction(act_insert_left)
+        menu.addAction(act_insert_right)
+        menu.addAction(act_duplicate_col)
+        menu.addSeparator()
+        menu.addAction(act_delete_col)
+
         menu.exec_(self.viewport().mapToGlobal(pos))
+
+    def open_column_context_menu(self, pos):
+        header = self.horizontalHeader()
+        col = header.logicalIndexAt(pos)
+        if col < 0:
+            return
+
+        # Set current column for operations
+        if self.model():
+            # Set current index to first row of this column
+            idx = self.model().index(0, col)
+            self.setCurrentIndex(idx)
+
+        menu = QMenu(self)
+
+        act_insert_left = QAction("Insert Column Left", self)
+        act_insert_right = QAction("Insert Column Right", self)
+        act_duplicate = QAction("Duplicate Column", self)
+        act_delete = QAction("Delete Column", self)
+
+        act_insert_left.triggered.connect(self.requestInsertColumnLeft.emit)
+        act_insert_right.triggered.connect(self.requestInsertColumnRight.emit)
+        act_duplicate.triggered.connect(self.requestDuplicateColumn.emit)
+        act_delete.triggered.connect(self.requestDeleteColumn.emit)
+
+        menu.addAction(act_insert_left)
+        menu.addAction(act_insert_right)
+        menu.addAction(act_duplicate)
+        menu.addSeparator()
+        menu.addAction(act_delete)
+        menu.exec_(header.mapToGlobal(pos))
 
     def eventFilter(self, obj, event):
         if self._frozen_view and obj is self._frozen_view.viewport() and event.type() == QEvent.Wheel:
