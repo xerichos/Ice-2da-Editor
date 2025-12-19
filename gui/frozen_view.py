@@ -491,7 +491,7 @@ class FrozenViewMixin:
         current_name = self.model().headerData(logicalIndex, Qt.Horizontal, Qt.DisplayRole) or ""
         new_name, ok = QInputDialog.getText(
             self, "Rename Column",
-            f"Enter new name for column {logicalIndex + 1}:",
+            f"Enter new name for column {logicalIndex}:",
             text=current_name
         )
 
@@ -504,7 +504,7 @@ class FrozenViewMixin:
                     logicalIndex,
                     current_name,
                     new_name.strip(),
-                    f"Rename Column {logicalIndex + 1}"
+                    f"Rename Column {logicalIndex}"
                 )
                 self.parent().undo_stack.push(command)
                 # Mark document as dirty

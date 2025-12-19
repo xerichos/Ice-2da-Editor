@@ -7,7 +7,7 @@ import os
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from gui.document import TwoDADocument
 from gui.cell_edit_command import CellEditCommand
-from data.twoda import load_2da, save_2da
+from data.twoda import load_2da, save_2da, TwoDAData
 from gui.error_handler import show_error
 
 
@@ -48,6 +48,10 @@ class FileManager:
             if add_to_recent:
                 self.main_window.recent_files_manager.add_recent_file(path)
             doc._last_mtime = os.path.getmtime(path)
+
+            # Ensure undo stack is clean after loading
+            doc.undo_stack.setClean()
+
             return doc
         except Exception as e:
             show_error("Failed to load 2DA file.", e)
@@ -153,6 +157,7 @@ class FileManager:
                 rows = data.row_fields
                 doc.model.set_data(header, rows)
                 doc.is_dirty = False
+                doc.undo_stack.setClean()  # Mark undo stack as clean after reload
                 self.main_window.update_tab_title(doc)
             except Exception as e:
                 show_error("Failed to reload file.", e)

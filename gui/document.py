@@ -231,9 +231,15 @@ class RenameColumnCommand(QUndoCommand):
 
     def redo(self):
         self.doc.model.setHeaderData(self.col, Qt.Horizontal, self.new_name, Qt.EditRole)
+        # Also update the document's current_data immediately
+        header, _ = self.doc.model.extract_data()
+        self.doc.current_data.header_fields = header[1:]
 
     def undo(self):
         self.doc.model.setHeaderData(self.col, Qt.Horizontal, self.old_name, Qt.EditRole)
+        # Also update the document's current_data
+        header, _ = self.doc.model.extract_data()
+        self.doc.current_data.header_fields = header[1:]
 
 
 class TwoDADocument(QWidget):

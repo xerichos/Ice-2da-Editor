@@ -63,12 +63,18 @@ class TwoDATable(QTableView, FrozenViewMixin):
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
 
+        # Hide the empty column 0
+        self.setColumnHidden(0, True)
+
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_context_menu)
 
         # Column header context menu
-        self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
-        self.horizontalHeader().customContextMenuRequested.connect(self.open_column_context_menu)
+        # Set column resize mode to resize to contents
+        hh = self.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        hh.setContextMenuPolicy(Qt.CustomContextMenu)
+        hh.customContextMenuRequested.connect(self.open_column_context_menu)
 
         # Keep scroll modes identical across views (needed for proper frozen view sync)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
