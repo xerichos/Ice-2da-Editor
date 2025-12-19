@@ -132,14 +132,15 @@ class TwoDATableModel(QAbstractTableModel):
         column = max(0, min(column, len(self._header)))
         self.beginInsertColumns(QModelIndex(), column, column + count - 1)
 
-        # Insert new headers
-        for _ in range(count):
-            self._header.insert(column, "")
+        # Insert new headers and data
+        for i in range(count):
+            # Give inserted columns a default name
+            default_name = f"NewColumn{i+1}" if count > 1 else "NewColumn"
+            self._header.insert(column, default_name)
 
-        # Insert new columns into all rows
-        for row in self._rows:
-            for _ in range(count):
-                row.insert(column, "")
+            # Insert default data (****) into all rows
+            for row in self._rows:
+                row.insert(column, "****")
 
         self.endInsertColumns()
 

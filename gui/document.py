@@ -317,27 +317,31 @@ class TwoDADocument(QWidget):
         col = self.table.currentColumn()
         if col < 0:
             return
-        self.undo_stack.push(InsertColumnCommand(self, col, 1, "Insert Column Left"))
+        # Don't insert before the index column (position 0)
+        insert_pos = max(1, col)
+        self.undo_stack.push(InsertColumnCommand(self, insert_pos, 1, "Insert Column Left"))
         self._mark_dirty()
 
     def insert_column_right(self):
         col = self.table.currentColumn()
         if col < 0:
             return
-        self.undo_stack.push(InsertColumnCommand(self, col + 1, 1, "Insert Column Right"))
+        # Insert after the current column, but ensure we're not inserting before index column
+        insert_pos = max(1, col + 1)
+        self.undo_stack.push(InsertColumnCommand(self, insert_pos, 1, "Insert Column Right"))
         self._mark_dirty()
 
     def duplicate_column(self):
         col = self.table.currentColumn()
-        if col < 0:
-            return
+        if col < 0 or col == 0:
+            return  # Don't duplicate the index column
         self.undo_stack.push(DuplicateColumnCommand(self, col))
         self._mark_dirty()
 
     def delete_column(self):
         col = self.table.currentColumn()
-        if col < 0:
-            return
+        if col < 0 or col == 0:
+            return  # Don't delete the index column
         self.undo_stack.push(RemoveColumnCommand(self, col, 1))
         self._mark_dirty()
 

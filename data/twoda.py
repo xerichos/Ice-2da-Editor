@@ -90,7 +90,7 @@ def load_2da(path: str) -> TwoDAData:
 
 
 def save_2da(path: str, data: TwoDAData):
-    from .twoda_rebuild import calculate_column_widths, rebuild_line_dynamic
+    from .twoda_rebuild import calculate_column_widths, rebuild_line_dynamic, rebuild_line_with_header_alignment
 
     # Calculate dynamic column widths based on current content
     header_widths, data_widths = calculate_column_widths(data)
@@ -118,5 +118,5 @@ def save_2da(path: str, data: TwoDAData):
                 # Reuse last known format or derive from header
                 fmt = data.row_formats[-1]
 
-            line = rebuild_line_dynamic(fmt, fields, data_widths, preserve_spacing=True)
+            line = rebuild_line_dynamic(fmt, fields, data_widths, preserve_spacing=True, header_fmt=data.header_format)
             f.write((line + linesep).encode('utf-8'))
