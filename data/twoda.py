@@ -90,33 +90,95 @@ def load_2da(path: str) -> TwoDAData:
 
 
 def save_2da(path: str, data: TwoDAData):
-    from .twoda_rebuild import calculate_column_widths, rebuild_line_dynamic, rebuild_line_with_header_alignment
+    # Preserve original line ending if we detected it at load time
+    linesep = getattr(data.header_format, "_linesep", "\n")
 
-    # Calculate dynamic column widths based on current content
-    header_widths, data_widths = calculate_column_widths(data)
+    header = list(data.header_fields or [])
+    rows = [list(r) for r in (data.row_fields or [])]
 
-    # Get line ending from original format
-    linesep = getattr(data.header_format, '_linesep', '\n')
+    # If there is no header, there's nothing sensible to write
+    if not header:
+        raise ValueError("Cannot save 2DA: header_fields is empty")
 
-    with open(path, "wb") as f:  # Write as bytes to preserve line endings
-        # Version line
-        f.write((data.version_line + linesep).encode('utf-8'))
+    n_cols = len(header)
+    target_row_len = 1 + n_cols  # index + data columns
 
-        # Restore blank lines between version and header
-        for _ in range(data.empty_lines_before_header):
-            f.write(linesep.encode('utf-8'))
+    def norm_cell(v: str) -> str:
+        # In 2DA files, **** represents an empty/undefined value.
+        if v is None:
+            return "****"
+        s = str(v)
+        return "****" if s == "" else s
 
-        # Header: preserve visual formatting but allow expansion
-        header_line = rebuild_line_dynamic(data.header_format, data.header_fields, header_widths, preserve_spacing=True)
-        f.write((header_line + linesep).encode('utf-8'))
+    # Normalize rows to the expected length: [index] + n header columns
+    norm_rows = []
+    for i, r in enumerate(rows):
+        r = [norm_cell(x) for x in r]
 
-        # Rows: allow dynamic expansion with calculated positions
-        for i, fields in enumerate(data.row_fields):
-            if i < len(data.row_formats):
-                fmt = data.row_formats[i]
+        if not r:
+            r = [str(i)]
+        if r[0] == "****":
+            r[0] = str(i)
+
+        if len(r) < target_row_len:
+            r.extend(["****"] * (target_row_len - len(r)))
+        elif len(r) > target_row_len:
+            r = r[:target_row_len]
+
+        norm_rows.append(r)
+
+    # Compute widths for real data columns (excluding index)
+    col_widths = []
+    for j in range(n_cols):
+        maxw = len(header[j])
+        for r in norm_rows:
+            maxw = max(maxw, len(r[j + 1]))
+        col_widths.append(maxw)
+
+    # Index column width (for padding index values only)
+    idx_width = max(1, max((len(r[0]) for r in norm_rows), default=1))
+
+    def format_data_fields(fields_1_to_n):
+        # Single-space separator, with padding to column widths.
+        # (This matches the ?no extra phantom header column? requirement and prevents the drift.)
+        parts = []
+        for j, val in enumerate(fields_1_to_n):
+            if j == n_cols - 1:
+                parts.append(val)
             else:
-                # Reuse last known format or derive from header
-                fmt = data.row_formats[-1]
+                parts.append(val.ljust(col_widths[j]))
+        return " ".join(parts)
 
-            line = rebuild_line_dynamic(fmt, fields, data_widths, preserve_spacing=True, header_fmt=data.header_format)
-            f.write((line + linesep).encode('utf-8'))
+
+    out_lines = []
+
+    # Version line
+    out_lines.append((data.version_line or "2DA V2.0").strip())
+
+    # Blank lines between version and header (commonly 1)
+    out_lines.extend([""] * int(getattr(data, "empty_lines_before_header", 0) or 0))
+
+    # Header line: preserve original trailing whitespace (if any)
+    hdr_suffix = trailing_suffix(data.header_format)
+    out_lines.append("   " + format_data_fields([norm_cell(h) for h in header]) + hdr_suffix)
+
+    # Data rows: preserve original trailing whitespace per row (if any)
+    for i, r in enumerate(norm_rows):
+        idx = r[0].ljust(idx_width)  # keep padding (no rstrip)
+        if i < len(data.row_formats):
+            suffix = trailing_suffix(data.row_formats[i])
+        elif data.row_formats:
+            suffix = trailing_suffix(data.row_formats[-1])
+        else:
+            suffix = ""
+        out_lines.append(idx + " " + format_data_fields(r[1:]) + suffix)
+
+
+    with open(path, "wb") as f:
+        f.write((linesep.join(out_lines) + linesep).encode("utf-8"))
+
+def trailing_suffix(fmt) -> str:
+    # Preserve exactly what was after the last token in the original raw line (usually spaces).
+    if fmt and getattr(fmt, "spans", None):
+        return fmt.raw[fmt.spans[-1][1]:]
+    return ""

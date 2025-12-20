@@ -4,7 +4,7 @@ Line rebuilding functions for 2DA files.
 These functions handle various strategies for rebuilding 2DA file lines
 while preserving formatting and alignment.
 """
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from .twoda import TwoDARow, TwoDAData
 
 
@@ -49,127 +49,77 @@ def rebuild_line(fmt: TwoDARow, new_fields: List[str], header_fmt: TwoDARow = No
     return result_str
 
 
-def rebuild_line_with_header_alignment(fmt: TwoDARow, fields: List[str], header_fmt: TwoDARow) -> str:
-    """Rebuild data line aligning columns with header positions."""
-    if not fields or not header_fmt.spans:
-        return fmt.raw or ""
 
-    # Create result with enough space
-    max_len = max(len(fmt.raw or ""), len(header_fmt.raw or ""))
-    result = [' '] * max_len
-
-    # Copy original line content first
-    if fmt.raw:
-        for i, char in enumerate(fmt.raw):
-            if i < len(result):
-                result[i] = char
-
-    # Index column (first field) stays at its original position
-    if fields and len(fields) > 0 and fmt.spans and len(fmt.spans) > 0:
-        index_span = fmt.spans[0]
-        index_value = fields[0]
-        orig_width = index_span[1] - index_span[0]
-        index_text = index_value[:orig_width].ljust(orig_width)
-
-        for j, char in enumerate(index_text):
-            pos = index_span[0] + j
-            if pos < len(result):
-                result[pos] = char
-
-    # Align data fields with header positions
-    for i in range(1, len(fields)):
-        if i-1 < len(header_fmt.spans):
-            # Normal case: align with corresponding header span
-            header_span = header_fmt.spans[i-1]
-            header_start = header_span[0]
-
-            # Get the data field value
-            field_value = fields[i]
-
-            # Determine width: use original data span width if available, otherwise header width
-            if i < len(fmt.spans):
-                data_span = fmt.spans[i]
-                width = data_span[1] - data_span[0]
-            else:
-                width = header_span[1] - header_span[0]
-
-            # Place the field at the header position, allowing expansion
-            field_len = len(field_value)
-            expansion_needed = field_len - width
-
-            if expansion_needed > 0:
-                # Need to expand - shift subsequent content
-                shift_start = header_start + width
-                shift_amount = expansion_needed
-
-                # Make room for the expanded field
-                new_result = result[:shift_start] + [' '] * shift_amount + result[shift_start:]
-                result = new_result
-
-            # Place the field
-            for j, char in enumerate(field_value):
-                pos = header_start + j
-                if pos < len(result):
-                    result[pos] = char
-        else:
-            # Extra fields beyond header spans - place them after the last header
-            if header_fmt.spans:
-                last_header_end = header_fmt.spans[-1][1]
-                # Add spacing before extra fields
-                current_pos = max(last_header_end + 1, len(result))
-
-                # Extend result if needed
-                if current_pos + len(fields[i]) > len(result):
-                    result.extend([' '] * (current_pos + len(fields[i]) - len(result)))
-
-                # Place the extra field
-                for j, char in enumerate(fields[i]):
-                    pos = current_pos + j
-                    if pos < len(result):
-                        result[pos] = char
-
-    # Preserve original trailing whitespace
-    result_str = ''.join(result)
-    orig_line = fmt.raw or ""
-    last_content_pos = len(orig_line.rstrip())
-    orig_trailing = orig_line[last_content_pos:]
-
-    # Ensure we have at least the original trailing whitespace
-    if len(result_str) < len(orig_line):
-        result_str += orig_trailing[:len(orig_line) - len(result_str)]
-    elif len(result_str) > len(orig_line):
-        # If longer, truncate to original length but preserve the trailing whitespace structure
-        result_str = result_str[:last_content_pos] + orig_trailing
-
-    return result_str
-
-
-def calculate_column_widths(data: TwoDAData) -> Tuple[List[int], List[int]]:
-    """Calculate the required width for header and data columns based on current content.
-
-    Returns:
-        Tuple of (header_widths, data_widths)
-        header_widths: widths for header columns (14 elements)
-        data_widths: widths for data columns including index (15 elements)
+def _orig_widths_from_spans(fmt) -> List[int]:
     """
-    if not data.header_fields or not data.row_fields:
-        return [], []
+    Derive the original per-column widths from a TwoDARow's spans.
+    Assumes columns are separated by at least 1 space.
+    Width for col i (non-last) is: next_start - start_i - 1
+    """
+    if not fmt or not getattr(fmt, "spans", None):
+        return []
 
-    header_num_cols = len(data.header_fields)  # Usually 14
-    data_num_cols = max(len(row) for row in data.row_fields) if data.row_fields else 0  # Usually 15
+    widths: List[int] = []
+    spans = fmt.spans
 
-    header_widths = [0] * header_num_cols
-    data_widths = [0] * data_num_cols
+    for i, (start, end) in enumerate(spans):
+        if i < len(spans) - 1:
+            next_start = spans[i + 1][0]
+            widths.append(max(1, next_start - start - 1))
+        else:
+            widths.append(max(1, end - start))
 
-    # Check header widths (skip the display index column)
-    for i, field in enumerate(data.header_fields):
-        header_widths[i] = max(header_widths[i], len(field))
+    return widths
 
-    # Check all row widths (including index column)
-    for row in data.row_fields:
-        for i, field in enumerate(row):
-            if i < data_num_cols:
-                data_widths[i] = max(data_widths[i], len(field))
+
+def rebuild_line_with_header_alignment(fmt, fields: List[str], widths: List[int]) -> str:
+    # Keep this for compatibility with existing imports.
+    return rebuild_line_dynamic(fmt, fields, widths, preserve_spacing=True)
+
+
+def calculate_column_widths(data) -> Tuple[List[int], List[int]]:
+    hdr_orig = _orig_widths_from_spans(getattr(data, "header_format", None))
+    row_orig = _orig_widths_from_spans(data.row_formats[0]) if getattr(data, "row_formats", None) else []
+
+    # Determine row column count
+    cols = max((len(r) for r in getattr(data, "row_fields", [])), default=0)
+
+    # Max content length per row column (including index col at 0)
+    maxlen: List[int] = [0] * cols
+    for r in getattr(data, "row_fields", []):
+        for c in range(cols):
+            v = r[c] if c < len(r) else ""
+            maxlen[c] = max(maxlen[c], len(str(v)))
+
+    # Data widths (rows) include index column at 0
+    data_widths: List[int] = [0] * cols
+    for c in range(cols):
+        base = maxlen[c]
+
+        # Preserve original row layout widths where available
+        if c < len(row_orig):
+            base = max(base, row_orig[c])
+        else:
+            # New column beyond original spans: ensure at least header name length (if it maps)
+            j = c - 1  # row col 1.. maps to header_fields 0..
+            if c > 0 and j < len(getattr(data, "header_fields", [])):
+                base = max(base, len(str(data.header_fields[j])))
+
+        data_widths[c] = base
+
+    # Header widths (no index column)
+    header_widths: List[int] = []
+    header_fields = getattr(data, "header_fields", [])
+
+    for j, h in enumerate(header_fields):
+        c = j + 1  # maps to row column
+        base = max(len(str(h)), maxlen[c] if c < len(maxlen) else 0)
+
+        # Preserve original header layout widths where available
+        if j < len(hdr_orig):
+            base = max(base, hdr_orig[j])
+
+        header_widths.append(base)
 
     return header_widths, data_widths
 
@@ -283,71 +233,34 @@ def rebuild_line_with_calculated_positions(fmt: TwoDARow, fields: List[str], col
     return result_str
 
 
-def rebuild_line_dynamic(fmt: TwoDARow, new_fields: List[str], column_widths: List[int], preserve_spacing: bool = False, header_fmt: TwoDARow = None) -> str:
-    """Rebuild line with smart expansion and spacing preservation.
-
-    Args:
-        fmt: The original format with spans
-        new_fields: New field values
-        column_widths: Required widths for expansion guidance
-        preserve_spacing: If True, preserve original visual spacing when possible
+def rebuild_line_dynamic(fmt, fields: List[str], widths: List[int],
+                        preserve_spacing: bool = True, header_fmt: Optional[object] = None) -> str:
     """
-    if not new_fields:
-        return fmt.raw or ""
+    Rebuild a single 2DA line using:
+    - preserved leading indentation (prefix before first token), and
+    - fixed widths + single-space separators.
+    """
+    prefix = ""
+    if preserve_spacing and fmt and getattr(fmt, "spans", None):
+        prefix = fmt.raw[:fmt.spans[0][0]]
 
-    # If we don't have format spans, fall back to calculated positions
-    if not fmt.spans:
-        widths = []
-        for value in new_fields:
-            if value == "****":
-                widths.append(4)
-            else:
-                widths.append(len(value))
-        return rebuild_line_with_calculated_positions(fmt, new_fields, widths)
+    sep = " "
+    out: List[str] = [prefix]
+    n = len(fields)
 
-    # Handle case where we have more fields than spans (columns were added)
-    if len(new_fields) > len(fmt.spans):
-        # For lines with extra columns, try to align based on existing structure
-        # Create an extended format by adding spans for new columns
-        extended_fmt = extend_format_for_new_columns_smart(fmt, new_fields, column_widths, header_fmt)
-        return rebuild_line(extended_fmt, new_fields)
-    elif len(new_fields) < len(fmt.spans):
-        # Handle case where columns were removed - use only the spans we need
-        truncated_fmt = TwoDARow(
-            raw=fmt.raw,
-            fields=fmt.fields[:len(new_fields)] if fmt.fields else [],
-            spans=fmt.spans[:len(new_fields)]
-        )
-        return rebuild_line(truncated_fmt, new_fields)
-    else:
-        # Normal case: same number of fields and spans
-        # Check if we need expansion or content changed
-        needs_expansion = False
-        content_changed = False
-        for i, ((start, end), value) in enumerate(zip(fmt.spans, new_fields)):
-            orig_width = end - start
-            if len(value) > orig_width or value == "****":
-                needs_expansion = True
-                break
-            # Check if content actually changed
-            orig_value = fmt.fields[i] if i < len(fmt.fields) else ""
-            if value != orig_value:
-                content_changed = True
+    for i, val in enumerate(fields):
+        s = "" if val is None else str(val)
+        w = widths[i] if i < len(widths) else len(s)
 
-        if preserve_spacing:
-            # For headers/data with preserve_spacing, use rebuild_line which now handles expansion
-            return rebuild_line(fmt, new_fields)
+        if i < n - 1:
+            out.append(s.ljust(w))
+            out.append(sep)
         else:
-            # For cases where we don't want to preserve spacing, use calculated positions
-            # Calculate widths based on content
-            widths = []
-            for value in new_fields:
-                if value == "****":
-                    widths.append(4)
-                else:
-                    widths.append(len(value))
+            out.append(s)
 
-            return rebuild_line_with_calculated_positions(fmt, new_fields, widths)
+    return "".join(out).rstrip()
+
+
 
 
 def extend_format_for_new_columns_smart(fmt: TwoDARow, new_fields: List[str], column_widths: List[int], header_fmt: TwoDARow = None) -> TwoDARow:

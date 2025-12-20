@@ -17,7 +17,17 @@ class TwoDATableModel(QAbstractTableModel):
         self.endResetModel()
 
     def extract_data(self):
-        return list(self._header), [list(r) for r in self._rows]
+        header = list(self._header)
+        rows = []
+
+        for r in self._rows:
+            row = list(r)
+            while len(row) < len(header):
+                row.append("****")
+            rows.append(row)
+
+        return header, rows
+
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self._rows)
@@ -129,50 +139,62 @@ class TwoDATableModel(QAbstractTableModel):
     def insertColumns(self, column, count, parent=QModelIndex()):
         if count <= 0:
             return False
+
         column = max(0, min(column, len(self._header)))
         self.beginInsertColumns(QModelIndex(), column, column + count - 1)
 
-        # Insert new headers and data
+        # --- insert headers ---
         for i in range(count):
-            # Give inserted columns a default name
-            default_name = f"NewColumn{i+1}" if count > 1 else "NewColumn"
-            self._header.insert(column, default_name)
+            name = "NewColumn" if count == 1 else f"NewColumn{i + 1}"
+            self._header.insert(column + i, name)
 
-            # Insert default data (****) into all rows
-            for row in self._rows:
-                row.insert(column, "****")
+        # --- normalize all rows BEFORE inserting ---
+        target_len = len(self._header) - count
+        for row in self._rows:
+            while len(row) < target_len:
+                row.append("****")
+
+        # --- insert placeholder data ---
+        for row in self._rows:
+            for i in range(count):
+                row.insert(column + i, "****")
 
         self.endInsertColumns()
 
-        # Notify any frozen view about column insertion
-        if hasattr(self, '_notify_frozen_column_insert'):
+        if hasattr(self, "_notify_frozen_column_insert"):
             self._notify_frozen_column_insert(column, count)
 
         return True
+
 
     def removeColumns(self, column, count, parent=QModelIndex()):
         if count <= 0:
             return False
         if column < 0 or column >= len(self._header):
             return False
+
         last = min(len(self._header) - 1, column + count - 1)
         self.beginRemoveColumns(QModelIndex(), column, last)
 
         # Remove headers
         del self._header[column:last + 1]
 
-        # Remove columns from all rows
+        # Remove data from rows
         for row in self._rows:
-            if column < len(row):
-                del row[column:column + count]
+            del row[column:last + 1]
+
+        # Normalize rows
+        for row in self._rows:
+            while len(row) < len(self._header):
+                row.append("****")
 
         self.endRemoveColumns()
 
-        # Notify any frozen view about column removal
-        if hasattr(self, '_notify_frozen_column_remove'):
+        if hasattr(self, "_notify_frozen_column_remove"):
             self._notify_frozen_column_remove(column, count)
 
         return True
+
 
     def duplicateRow(self, row):
         if row < 0 or row >= len(self._rows):
