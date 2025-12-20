@@ -108,3 +108,5 @@ class MultiCellFillCommand(QUndoCommand):
         mw = self.document.window()
         if mw and hasattr(mw, "update_tab_title"):
             mw.update_tab_title(self.document)
+
+
