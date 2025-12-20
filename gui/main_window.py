@@ -144,6 +144,17 @@ class MainWindow(QMainWindow):
         self.act_save_all.setShortcut("Ctrl+Shift+S")
         self.act_save_all.triggered.connect(self.file_manager.save_all)
 
+        # NORMALIZE action - stands out from other actions
+        self.act_normalize = QAction("NORMALIZE", self)
+        self.act_normalize.setShortcut("Ctrl+N")
+        # Make it stand out with different properties
+        font = self.act_normalize.font()
+        font.setBold(True)
+        self.act_normalize.setFont(font)
+        self.act_normalize.setToolTip("Normalize column alignment and structure (Ctrl+N)")
+        # Connect to a placeholder function (no logic yet as requested)
+        self.act_normalize.triggered.connect(self.normalize_action)
+
         self.act_next_tab = QAction(self)
         self.act_next_tab.setShortcut("Ctrl+Tab")
         self.act_next_tab.triggered.connect(self.next_tab)
@@ -301,8 +312,9 @@ class MainWindow(QMainWindow):
         else:
             doc.find_next()
 
-
-
+    def normalize_action(self):
+        """Placeholder for NORMALIZE functionality - no logic implemented yet"""
+        print("NORMALIZE button clicked - no functionality implemented yet")
 
     # ==============================================================
     # Utilities
@@ -462,3 +474,8 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
 
         tb.addAction(self.act_search)
+
+        tb.addSeparator()
+
+        # NORMALIZE button - stands out
+        tb.addAction(self.act_normalize)

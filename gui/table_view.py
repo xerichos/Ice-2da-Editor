@@ -472,11 +472,38 @@ class TwoDATable(QTableView, FrozenViewMixin):
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            idx = self.currentIndex()
-            if idx.isValid():
-                self.edit(idx)
+            # Handle multi-cell selection: focus on last selected cell
+            selected_indexes = self.selectionModel().selectedIndexes()
+            if len(selected_indexes) > 1:
+                # Sort by row, then column to get the "last" cell
+                sorted_indexes = sorted(selected_indexes, key=lambda idx: (idx.row(), idx.column()))
+                last_idx = sorted_indexes[-1]
+                self.setCurrentIndex(last_idx)
+                self.edit(last_idx)
                 event.accept()
                 return
+            else:
+                # Single cell: edit current cell
+                idx = self.currentIndex()
+                if idx.isValid():
+                    self.edit(idx)
+                    event.accept()
+                    return
+        elif event.key() == Qt.Key_Backspace:
+            # Clear selected cells
+            selected_indexes = self.selectionModel().selectedIndexes()
+            if selected_indexes:
+                # Get unique (row, col) pairs (in case of multi-selection modes)
+                cells_to_clear = list(set((idx.row(), idx.column()) for idx in selected_indexes))
+
+                # Create multi-cell clear command
+                from .cell_edit_command import MultiCellClearCommand
+                doc = self.parent()  # TwoDADocument
+                if hasattr(doc, 'undo_stack'):
+                    command = MultiCellClearCommand(doc, cells_to_clear)
+                    doc.undo_stack.push(command)
+                    event.accept()
+                    return
         elif event.matches(QKeySequence.Copy):
             self.copy_selection()
             event.accept()

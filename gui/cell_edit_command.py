@@ -1,4 +1,6 @@
 from PyQt5.QtWidgets import QUndoCommand
+from PyQt5.QtCore import Qt
+from typing import List, Tuple
 
 
 class CellEditCommand(QUndoCommand):
@@ -28,6 +30,41 @@ class CellEditCommand(QUndoCommand):
             self.new_text,
             emit_edit_signal=False
         )
+        self._mark_dirty()
+
+    def _mark_dirty(self):
+        self.document.is_dirty = True
+        mw = self.document.window()
+        if mw and hasattr(mw, "update_tab_title"):
+            mw.update_tab_title(self.document)
+
+
+class MultiCellClearCommand(QUndoCommand):
+    """Command for clearing multiple selected cells."""
+
+    def __init__(self, document, cells_to_clear: List[Tuple[int, int]]):
+        super().__init__(f"Clear {len(cells_to_clear)} Cells")
+
+        self.document = document
+        self.model = document.model
+        self.cells_to_clear = cells_to_clear
+        self.old_values = []  # List of (row, col, old_value)
+
+        # Capture old values
+        for row, col in self.cells_to_clear:
+            old_value = self.model.data(self.model.index(row, col), Qt.DisplayRole)
+            if old_value is None:
+                old_value = ""
+            self.old_values.append((row, col, str(old_value)))
+
+    def undo(self):
+        for row, col, old_value in self.old_values:
+            self.model.set_cell(row, col, old_value, emit_edit_signal=False)
+        self._mark_dirty()
+
+    def redo(self):
+        for row, col, _ in self.old_values:
+            self.model.set_cell(row, col, "", emit_edit_signal=False)
         self._mark_dirty()
 
     def _mark_dirty(self):
