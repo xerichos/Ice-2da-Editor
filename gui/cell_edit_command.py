@@ -72,3 +72,39 @@ class MultiCellClearCommand(QUndoCommand):
         mw = self.document.window()
         if mw and hasattr(mw, "update_tab_title"):
             mw.update_tab_title(self.document)
+
+
+class MultiCellFillCommand(QUndoCommand):
+    """Command for filling multiple selected cells with a value."""
+
+    def __init__(self, document, cells_to_fill: List[Tuple[int, int]], fill_value: str):
+        super().__init__(f"Fill {len(cells_to_fill)} Cells with '{fill_value}'")
+
+        self.document = document
+        self.model = document.model
+        self.cells_to_fill = cells_to_fill
+        self.fill_value = fill_value
+        self.old_values = []  # List of (row, col, old_value)
+
+        # Capture old values
+        for row, col in self.cells_to_fill:
+            old_value = self.model.data(self.model.index(row, col), Qt.DisplayRole)
+            if old_value is None:
+                old_value = ""
+            self.old_values.append((row, col, str(old_value)))
+
+    def undo(self):
+        for row, col, old_value in self.old_values:
+            self.model.set_cell(row, col, old_value, emit_edit_signal=False)
+        self._mark_dirty()
+
+    def redo(self):
+        for row, col, _ in self.old_values:
+            self.model.set_cell(row, col, self.fill_value, emit_edit_signal=False)
+        self._mark_dirty()
+
+    def _mark_dirty(self):
+        self.document.is_dirty = True
+        mw = self.document.window()
+        if mw and hasattr(mw, "update_tab_title"):
+            mw.update_tab_title(self.document)

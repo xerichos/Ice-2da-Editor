@@ -155,6 +155,12 @@ class MainWindow(QMainWindow):
         # Connect to a placeholder function (no logic yet as requested)
         self.act_normalize.triggered.connect(self.normalize_action)
 
+        # **** action - replace selected cells with ****
+        self.act_fill_stars = QAction("****", self)
+        self.act_fill_stars.setShortcut("Ctrl+4")
+        self.act_fill_stars.setToolTip("Fill selected cells with **** (Ctrl+4)")
+        self.act_fill_stars.triggered.connect(self.fill_selected_with_stars)
+
         self.act_next_tab = QAction(self)
         self.act_next_tab.setShortcut("Ctrl+Tab")
         self.act_next_tab.triggered.connect(self.next_tab)
@@ -315,6 +321,25 @@ class MainWindow(QMainWindow):
     def normalize_action(self):
         """Placeholder for NORMALIZE functionality - no logic implemented yet"""
         print("NORMALIZE button clicked - no functionality implemented yet")
+
+    def fill_selected_with_stars(self):
+        """Fill selected cells with ****"""
+        doc = self.current_doc()
+        if not doc:
+            return
+
+        # Get selected cells
+        selected_indexes = doc.table.selectionModel().selectedIndexes()
+        if not selected_indexes:
+            return
+
+        # Get unique (row, col) pairs
+        cells_to_fill = list(set((idx.row(), idx.column()) for idx in selected_indexes))
+
+        # Create multi-cell fill command
+        from gui.cell_edit_command import MultiCellFillCommand
+        command = MultiCellFillCommand(doc, cells_to_fill, "****")
+        doc.undo_stack.push(command)
 
     # ==============================================================
     # Utilities
@@ -479,3 +504,8 @@ class MainWindow(QMainWindow):
 
         # NORMALIZE button - stands out
         tb.addAction(self.act_normalize)
+
+        tb.addSeparator()
+
+        # **** button - fill selected cells with ****
+        tb.addAction(self.act_fill_stars)
