@@ -158,9 +158,14 @@ def save_2da(path: str, data: TwoDAData):
     # Blank lines between version and header (commonly 1)
     out_lines.extend([""] * int(getattr(data, "empty_lines_before_header", 0) or 0))
 
-    # Header line: preserve original trailing whitespace (if any)
     hdr_suffix = trailing_suffix(data.header_format)
-    out_lines.append("   " + format_data_fields([norm_cell(h) for h in header]) + hdr_suffix)
+
+    # Fallback for brand-new/formatless files: match typical 2DA look by using (idx_width + 1) spaces.
+    # For loaded files (like feat.2da), leading_prefix(...) preserves the original exact gap.
+    hdr_prefix = leading_prefix(data.header_format, fallback=(" " * (idx_width + 1)))
+
+    out_lines.append(hdr_prefix + format_data_fields([norm_cell(h) for h in header]) + hdr_suffix)
+
 
     # Data rows: preserve original trailing whitespace per row (if any)
     for i, r in enumerate(norm_rows):
@@ -172,6 +177,7 @@ def save_2da(path: str, data: TwoDAData):
         else:
             suffix = ""
         out_lines.append(idx + " " + format_data_fields(r[1:]) + suffix)
+        
 
 
     with open(path, "wb") as f:
@@ -182,3 +188,19 @@ def trailing_suffix(fmt) -> str:
     if fmt and getattr(fmt, "spans", None):
         return fmt.raw[fmt.spans[-1][1]:]
     return ""
+
+def leading_prefix(fmt, fallback: str) -> str:
+    # Preserve exactly what was before the first token in the original raw line.
+    if fmt and getattr(fmt, "spans", None) and fmt.spans:
+        return fmt.raw[:fmt.spans[0][0]]
+    return fallback
+
+
+def index_gap(fmt, default: str = " "):
+    # Preserve the exact whitespace between column 0 and column 1 on that row.
+    if fmt and getattr(fmt, "spans", None) and len(fmt.spans) >= 2:
+        end0 = fmt.spans[0][1]
+        start1 = fmt.spans[1][0]
+        if start1 >= end0:
+            return fmt.raw[end0:start1]
+    return default
